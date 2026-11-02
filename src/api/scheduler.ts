@@ -56,7 +56,7 @@ export const schedulerApi = {
 
   /** 取消任务（旧契约：rmf_task_id 定位；排队→canceled，执行中→completed+cancellation） */
   async stopTask(rmfTaskId: string, reason = '手动取消'): Promise<unknown> {
-    const res = await http.post('/api/v1/scheduler/stop_task', {
+    const res = await http.post('/api/v1/scheduler/stop-task', {
       rmf_task_id: rmfTaskId, reason,
     }, { headers: { 'Content-Type': 'application/json' } })
     return res.data?.data ?? res.data
