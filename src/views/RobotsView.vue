@@ -27,12 +27,29 @@
           </span>
         </template>
       </el-table-column>
-      <el-table-column label="可派" width="60" align="center">
+      <el-table-column label="可派" width="200">
         <template #default="{ row }">
           <span v-if="row.decommissioned" style="color:#f56c6c;font-size:11px">停用</span>
           <span v-else-if="row.mode === 'running' || row.mode === 'charging'" style="color:#409eff;font-size:11px">执行中</span>
           <span v-else-if="row.dispatchable" style="color:#67c23a;font-size:11px">可派</span>
-          <span v-else style="color:#f56c6c;font-size:11px">不可派</span>
+          <el-tooltip v-else :content="row.dispatch_blocked_reason ?? '未知原因'" placement="top">
+            <span style="color:#f56c6c;font-size:11px;cursor:help;border-bottom:1px dotted #f56c6c">
+              不可派（{{ shortReason(row.dispatch_blocked_reason) }}）
+            </span>
+          </el-tooltip>
+        </template>
+      </el-table-column>
+      <el-table-column label="使用权" width="200">
+        <template #default="{ row }">
+          <div v-if="row.owned_by_taskflow" class="own-cell">
+            <span class="own-tag" :class="ownStale(row) ? 'own-stale' : ''"
+                  :title="'taskflow ' + row.owned_by_taskflow">
+              🔒 {{ String(row.owned_by_taskflow).slice(-6) }}（{{ heldText(row.owned_since_ms) }}）
+            </span>
+            <el-button v-if="ownStale(row) && !row.current_task_id" link type="danger" size="small"
+                       @click="openForceRelease(row)">强释</el-button>
+          </div>
+          <span v-else style="color:#c0c4cc;font-size:11px">—</span>
         </template>
       </el-table-column>
       <el-table-column label="电量" width="120">
@@ -63,11 +80,27 @@
         </template>
       </el-table-column>
     </el-table>
+
+    <!-- 强制释放确认（运维逃生门：reason 必填审计） -->
+    <el-dialog v-model="forceDlg.visible" title="强制释放机器人使用权" width="440px" align-center>
+      <div class="force-tip">
+        将释放 <b>{{ forceDlg.robot_code }}</b> 的使用权（持有者 taskflow
+        {{ String(forceDlg.owned_by ?? '').slice(-6) }}，已持有 {{ heldText(forceDlg.owned_since) }}）。
+        释放后该机器人可被其他任务流抢占；操作将记录审计事件。
+      </div>
+      <el-input v-model="forceDlg.reason" placeholder="必填：释放原因（审计记录）" maxlength="120" show-word-limit />
+      <template #footer>
+        <el-button @click="forceDlg.visible = false">取消</el-button>
+        <el-button type="danger" :disabled="!forceDlg.reason.trim()" :loading="forceDlg.loading"
+                   @click="confirmForceRelease">确认强制释放</el-button>
+      </template>
+    </el-dialog>
   </el-card>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { schedulerApi } from '@/api/scheduler'
 import { rememberRobotNames, robotDisplayName } from '@/utils/robotNames'
 import type { RobotInfo } from '@/types'
@@ -101,6 +134,60 @@ const batteryColor = (b: number | null) => {
   return '#67c23a'
 }
 
+/** 不可派原因短文案（tooltip 看全文） */
+function shortReason(reason: string | null | undefined): string {
+  if (!reason) return '未知'
+  if (reason.includes('使用权')) return '使用权占用'
+  if (reason.includes('停止确认')) return '停止确认中'
+  if (reason.includes('地图不一致')) return '地图不一致'
+  if (reason.includes('离图')) return '离图'
+  if (reason.includes('移动中')) return '移动中'
+  if (reason.includes('离线')) return '离线'
+  return reason.length > 6 ? reason.slice(0, 6) + '…' : reason
+}
+
+/** 占用持有时长文案 */
+function heldText(sinceMs: number | null | undefined): string {
+  if (!sinceMs) return '未知'
+  const s = Math.floor((Date.now() - sinceMs) / 1000)
+  if (s < 90) return `${s} 秒`
+  if (s < 5400) return `${(s / 60).toFixed(0)} 分钟`
+  return `${(s / 3600).toFixed(1)} 小时`
+}
+
+/** 占用疑似孤儿：持有超 10 分钟仍无当前任务（租约看门狗 2 分钟自动回收，>10min 说明看门狗关闭或异常） */
+function ownStale(row: RobotInfo): boolean {
+  if (!row.owned_since_ms) return false
+  return Date.now() - row.owned_since_ms > 10 * 60_000
+}
+
+/** 强制释放对话框 */
+const forceDlg = reactive({
+  visible: false, loading: false,
+  robot_code: '', owned_by: '' as string | null, owned_since: null as number | null,
+  reason: '',
+})
+function openForceRelease(row: RobotInfo) {
+  forceDlg.robot_code = row.robot_code
+  forceDlg.owned_by = row.owned_by_taskflow
+  forceDlg.owned_since = row.owned_since_ms
+  forceDlg.reason = ''
+  forceDlg.visible = true
+}
+async function confirmForceRelease() {
+  forceDlg.loading = true
+  try {
+    const r = await schedulerApi.forceReleaseRobot(forceDlg.robot_code, forceDlg.reason.trim())
+    ElMessage.success(`已强制释放（taskflow ${String(r?.taskflow_id ?? '').slice(-6)}）`)
+    forceDlg.visible = false
+    load()
+  } catch (e: any) {
+    ElMessage.error(`强制释放失败: ${e?.response?.data?.detail ?? e?.message ?? '未知错误'}`)
+  } finally {
+    forceDlg.loading = false
+  }
+}
+
 async function load() {
   try {
     robots.value = await schedulerApi.robots()
@@ -117,4 +204,8 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .robot-two-line { display: flex; flex-direction: column; gap: 1px; line-height: 1.4; }
 .robot-two-line .robot-name { font-size: 12px; color: #303133; font-weight: 600; }
 .robot-two-line .robot-code { font-size: 11px; color: #909399; }
+.own-cell { display: flex; align-items: center; gap: 6px; }
+.own-tag { font-size: 11px; color: #606266; background: #f4f4f5; border-radius: 3px; padding: 1px 6px; white-space: nowrap; }
+.own-tag.own-stale { color: #e6a23c; background: #fdf6ec; }
+.force-tip { font-size: 12px; color: #606266; line-height: 1.6; margin-bottom: 10px; }
 </style>

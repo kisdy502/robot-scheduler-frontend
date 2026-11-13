@@ -62,6 +62,13 @@ export interface RobotInfo {
   online_status: 'online' | 'offline'
   mode: string
   dispatchable: boolean
+  /** 不可派具体原因（null=可派）：使用权占用/停止确认中/地图不一致/离图等 */
+  dispatch_blocked_reason?: string | null
+  /** 当前持有使用权的 taskflow（无占用为 null） */
+  owned_by_taskflow?: string | null
+  /** 使用权取得时间（unix 毫秒，无占用为 null） */
+  owned_since_ms?: number | null
+  slam_map_code?: string | null
   decommissioned?: boolean
   battery: number | null
   home_point: string | null

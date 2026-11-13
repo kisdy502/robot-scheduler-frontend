@@ -10,6 +10,8 @@ const router = createRouter({
     { path: '/traffic', name: 'traffic', component: () => import('@/views/TrafficView.vue') },
     { path: '/events', name: 'events', component: () => import('@/views/EventsView.vue') },
     { path: '/chargers', name: 'chargers', component: () => import('@/views/ChargersView.vue') },
+    { path: '/qc-sim', name: 'qc-sim', component: () => import('@/views/ActivitySimView.vue'), props: { kind: 'qc' } },
+    { path: '/charge-sim', name: 'charge-sim', component: () => import('@/views/ActivitySimView.vue'), props: { kind: 'charge' } },
     { path: '/:pathMatch(.*)*', redirect: '/map' },
   ],
 })

@@ -9,10 +9,67 @@ import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js'
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js'
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js'
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js'
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { pointStyle } from '@/utils/pointStyle'
 import { robotDisplayName } from '@/utils/robotNames'
+
 import type { Waypoint, PathInfo, Zone, RobotInfo, ActiveRoute } from '@/types'
 
+// ==================== 机器人徽标（紧凑单行：图标 + 名字 + 5 格电池） ====================
+
+/** 状态图标映射：空闲 ○ / 移动 ➤ / 作业 ⚙ / 充电 ⚡ / 等待 … / 暂停 ‖ / 错误 ✕ / 离线 ⊘ */
+function modeIcon(mode: string): { glyph: string; color: string } {
+  switch (mode) {
+    case 'running': return { glyph: '➤', color: '#79bbff' }
+    case 'charging': return { glyph: '⚡', color: '#95d475' }
+    case 'working': return { glyph: '⚙', color: '#c8a6ff' }
+    case 'waiting': return { glyph: '…', color: '#eebe77' }
+    case 'paused': return { glyph: '‖', color: '#eebe77' }
+    case 'error': return { glyph: '✕', color: '#fab6b6' }
+    case 'offline': return { glyph: '⊘', color: '#a8abb2' }
+    case 'idle':
+    default: return { glyph: '○', color: '#a8abb2' }
+  }
+}
+
+/** 5 格电池条：满格数 = ceil(level/20)；<10% 红 / 10-20% 橙 / >20% 绿 */
+function batteryBar(level: number | null | undefined): string {
+  if (level == null || !Number.isFinite(level)) return ''
+  const segs = Math.max(0, Math.min(5, Math.ceil(level / 20)))
+  const cls = level < 10 ? 'r' : level <= 20 ? 'o' : 'g'
+  let html = '<span class="nd-batt">'
+  for (let i = 0; i < 5; i++) html += `<i class="${i < segs ? 'on ' + cls : ''}"></i>`
+  return html + '</span>'
+}
+
+/** 名字截断：CJK 记 1 宽、其他记 0.5 宽，上限 6（"JY玄骨上人" 保留，"RB_20261103_..." 截短） */
+function truncateCjkName(name: string, maxWidth = 6): string {
+  let width = 0
+  let end = 0
+  for (const ch of name) {
+    const w = /[\u2E80-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/.test(ch) ? 1 : 0.5
+    if (width + w > maxWidth) break
+    width += w
+    end += ch.length
+  }
+  return end < name.length ? name.slice(0, end) + '…' : name
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string))
+}
+
+/** 徽标组装：[🔒]⚠图标 名字 电池条（🔒=使用权占用中） */
+function buildRobotBadge(name: string, mode: string, battery: number | null | undefined,
+                         anomalous: boolean, owned: boolean = false): string {
+  const icon = modeIcon(mode)
+  return (owned ? '<span class="nd-ricon nd-rlock">🔒</span>' : '')
+      + (anomalous ? '<span class="nd-ricon" style="color:#fff">⚠</span>' : '')
+      + `<span class="nd-ricon" style="color:${icon.color}">${icon.glyph}</span>`
+      + `<b class="nd-rname">${escapeHtml(truncateCjkName(name))}</b>`
+      + batteryBar(battery)
+}
 const POINT_R = 0.19
 const POINT_H = 0.02
 const LANE_W = 0.05
@@ -89,6 +146,23 @@ export class MapCanvas {
 
   private animationId = 0
   private disposed = false
+  private routesKey = ''
+
+  /** 同一帧内的多次状态变更合并绘制；静止及后台页面不持续占用 GPU。 */
+  private invalidate = () => {
+    if (!this.disposed && !document.hidden && !this.animationId) {
+      this.animationId = requestAnimationFrame(this.animate)
+    }
+  }
+
+  private onVisibilityChange = () => {
+    if (document.hidden) {
+      cancelAnimationFrame(this.animationId)
+      this.animationId = 0
+    } else {
+      this.invalidate()
+    }
+  }
 
   // 回调
   onPointContextMenu: ((point: PickedPoint, clientX: number, clientY: number) => void) | null = null
@@ -107,7 +181,8 @@ export class MapCanvas {
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true })
     this.renderer.setSize(container.clientWidth, container.clientHeight)
-    this.renderer.setPixelRatio(window.devicePixelRatio)
+    // 限制高分屏填充开销，避免 2~3 倍 DPR 导致 4~9 倍像素绘制。
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5))
     this.renderer.domElement.className = 'map-canvas-el'
     container.appendChild(this.renderer.domElement)
 
@@ -128,6 +203,8 @@ export class MapCanvas {
     // Z-up 语义：极角 = 俯仰（0 正俯视，π/2.05 近水平不让钻到地面下），方位角 = 左右旋转
     this.controls.minPolarAngle = 0.05
     this.controls.maxPolarAngle = Math.PI / 2.05
+    this.controls.addEventListener('change', this.invalidate)
+    document.addEventListener('visibilitychange', this.onVisibilityChange)
 
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.9))
     const dir = new THREE.DirectionalLight(0xffffff, 0.5)
@@ -150,7 +227,7 @@ export class MapCanvas {
     this.resizeObs = new ResizeObserver(() => this.resize())
     this.resizeObs.observe(container)
     this.setPreset('tilt')
-    this.animate()
+    this.invalidate()
   }
 
   // ==================== 右键拾取 ====================
@@ -218,6 +295,7 @@ export class MapCanvas {
     this.controls.target.copy(t)
     this.controls.update()
     this.onPresetChange?.(preset)
+    this.invalidate()
   }
 
   getPreset(): ViewPreset { return this.currentPreset }
@@ -230,6 +308,7 @@ export class MapCanvas {
     try {
       const loader = new THREE.TextureLoader()
       const texture = await loader.loadAsync(imageUrl)
+      if (this.disposed) { texture.dispose(); return }
       texture.flipY = true
       const worldW = geo.width * geo.resolution
       const worldH = geo.height * geo.resolution
@@ -240,61 +319,91 @@ export class MapCanvas {
         new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 0.7, side: THREE.DoubleSide }),
       )
       plane.position.set(centerX, centerY, -0.01)
-      this.mapImageGroup.clear()
+      this.clearGroup(this.mapImageGroup)
       this.mapImageGroup.add(plane)
       this.gridGroup.visible = false
+      this.invalidate()
     } catch { /* 图片不可用 */ }
   }
 
   // ==================== 数据更新 ====================
 
   updateMap(data: { waypoints: Waypoint[]; paths: PathInfo[]; zones: Zone[] }) {
+    if (this.disposed) return
     this.fitCamera(data.waypoints)
     this.rebuildPoints(data.waypoints)
     this.rebuildPaths(data.waypoints, data.paths)
     this.rebuildZones(data.zones)
+    // 比例变化时，下次路线更新需重新生成目标环。
+    this.routesKey = ''
+    this.invalidate()
   }
 
   updateRobots(robots: RobotInfo[], selectedCode = '') {
+    if (this.disposed) return
     const activeCodes = new Set<string>()
+    let changed = false
+    const now = performance.now()
     for (const r of robots) {
-      if (!r.pose) continue
+      if (!r.pose || !Number.isFinite(r.pose.x) || !Number.isFinite(r.pose.y)
+          || !Number.isFinite(r.pose.yaw)) continue
       activeCodes.add(r.robot_code)
       let mesh = this.robots.get(r.robot_code)
       if (!mesh) {
         mesh = this.createRobotMesh(r.robot_code)
         this.robots.set(r.robot_code, mesh)
         this.robotsGroup.add(mesh.root)
+        changed = true
       }
       const focused = r.robot_code === selectedCode
-      mesh.root.visible = true
-      mesh.root.scale.setScalar(this.sceneScale * (focused ? 1.3 : 1))
-      mesh.root.position.x = r.pose.x
-      mesh.root.position.y = r.pose.y
-      mesh.body.rotation.z = r.pose.yaw
+      if (!mesh.root.visible) { mesh.root.visible = true; changed = true }
+      const scale = this.sceneScale * (focused ? 1.3 : 1)
+      if (mesh.root.scale.x !== scale) { mesh.root.scale.setScalar(scale); changed = true }
+      const target = { x: r.pose.x, y: r.pose.y, yaw: r.pose.yaw }
+      if (!mesh.shown || r.online_status !== 'online') {
+        mesh.root.position.set(target.x, target.y, 0)
+        mesh.body.rotation.z = target.yaw
+        changed ||= !mesh.shown || mesh.shown.x !== target.x || mesh.shown.y !== target.y
+          || mesh.shown.yaw !== target.yaw || !!mesh.motion
+        mesh.motion = null
+      } else if (mesh.shown.x !== target.x || mesh.shown.y !== target.y || mesh.shown.yaw !== target.yaw) {
+        // 只在展示层插值，不预测未来位置；新帧从当前显示姿态平滑过渡，角度取最短旋转。
+        mesh.motion = { x: mesh.root.position.x, y: mesh.root.position.y,
+          yaw: mesh.body.rotation.z, startedAt: now, target }
+        changed = true
+      }
+      mesh.shown = target
       const el = mesh.label.element as HTMLDivElement
       const inner = el.querySelector('.nd-label-inner--robot') as HTMLSpanElement
       if (inner) {
-        const battery = r.battery != null ? `${Math.round(r.battery)}%` : '--'
         const displayName = robotDisplayName(r.robot_code)
         // 在线但不可派发（离图/异常模式/地图不一致）→ ⚠ 前缀 + 橙底，前端一眼可见（否则 mode=idle 看起来正常）
         const anomalous = r.online_status === 'online' && !r.dispatchable
-        inner.textContent = `${anomalous ? '⚠ ' : ''}${displayName} ${r.mode} ${battery}`
+        const badgeKey = JSON.stringify([displayName, r.mode, r.battery, anomalous, focused, r.online_status])
+        if (badgeKey === mesh.badgeKey) continue
+        mesh.badgeKey = badgeKey
+        changed = true
+        inner.innerHTML = buildRobotBadge(displayName, r.mode, r.battery, anomalous,
+            r.owned_by_taskflow != null)
         inner.style.background = anomalous ? 'rgba(230,162,60,0.92)'
           : r.mode === 'running' ? 'rgba(64,158,255,0.85)'
           : r.mode === 'charging' ? 'rgba(103,194,58,0.85)'
           : r.mode === 'error' ? 'rgba(245,108,108,0.9)'
           : 'rgba(38,42,50,0.78)'
         inner.style.outline = focused ? '2px solid #409eff' : 'none'
-        const codeEl = el.querySelector('.nd-label-code--robot') as HTMLDivElement
-        if (codeEl) {
-          codeEl.textContent = r.robot_code
-        }
+        inner.classList.toggle('is-offline', r.online_status !== 'online')
       }
     }
     for (const [code, mesh] of this.robots) {
-      if (!activeCodes.has(code)) mesh.root.visible = false
+      if (!activeCodes.has(code)) {
+        // 清单中移除的机器人不保留历史模型，反复上下线不会累积 GPU 对象。
+        this.clearGroup(mesh.root)
+        mesh.root.removeFromParent()
+        this.robots.delete(code)
+        changed = true
+      }
     }
+    if (changed) this.invalidate()
   }
 
   // ==================== 活动路线 ====================
@@ -305,17 +414,25 @@ export class MapCanvas {
    * 线用 Line2（像素线宽）：THREE.Line 固定 1px，浅底图上不可见。
    */
   updateRoutes(routes: ActiveRoute[], selectedCode = '', showAll = true) {
-    this.routesGroup.clear()
+    if (this.disposed) return
+    const visibleRoutes = routes.filter(route => showAll || route.robot_code === selectedCode)
+    // updated_at 等心跳字段不影响绘制，只有路线、进度和选中状态变化才重建。
+    const key = JSON.stringify([selectedCode, this.sceneScale,
+      visibleRoutes.map(route => [route.robot_code, route.progress,
+        route.waypoints.map(point => [point.x, point.y])])])
+    if (key === this.routesKey) return
+    this.routesKey = key
+    this.clearGroup(this.routesGroup)
     const scale = this.sceneScale
     const res = this.renderer.getSize(new THREE.Vector2())
-    for (const route of routes) {
+    for (const route of visibleRoutes) {
       const focused = route.robot_code === selectedCode
       if (!showAll && !focused) continue
       const pts = route.waypoints.filter(p => p.x != null && p.y != null)
       if (pts.length < 2) continue
       const color = this.robotColor(route.robot_code)
       // 车道条带顶面 0.02 之上（避免被立体条带遮挡/穿插）
-    const z = focused ? 0.05 : 0.04
+      const z = focused ? 0.05 : 0.04
 
       // 已走段：灰色实线（深一档保证可见：浅灰细线在浅底图上等同隐形）
       const cut = Math.min(route.progress, pts.length - 1)
@@ -347,6 +464,7 @@ export class MapCanvas {
       ring.position.set(dest.x!, dest.y!, z + 0.01)
       this.routesGroup.add(ring)
     }
+    this.invalidate()
   }
 
   /** 像素级线宽折线（Line2；dashed 需 computeLineDistances） */
@@ -365,7 +483,7 @@ export class MapCanvas {
   // ==================== 点位构建 ====================
 
   private rebuildPoints(waypoints: Waypoint[]) {
-    this.pointsGroup.clear()
+    this.clearGroup(this.pointsGroup)
     this.pointGroups.clear()
     const scale = this.sceneScale
 
@@ -453,7 +571,7 @@ export class MapCanvas {
   }
 
   private rebuildPaths(waypoints: Waypoint[], paths: PathInfo[]) {
-    this.pathsGroup.clear()
+    this.clearGroup(this.pathsGroup)
     const scale = this.sceneScale
     const wpMap = new Map(waypoints.map(w => [w.id, w]))
     // 车道立体条带材质（Lambert：侧壁受光差异产生立体感；细+浅+半透明，调度路线画在其上）
@@ -541,10 +659,42 @@ export class MapCanvas {
         }
       }
     }
+    this.mergePaths()
+    for (const material of [laneMat, curveLaneMat, arrowMat]) {
+      if (!this.pathsGroup.children.some(child => (child as THREE.Mesh).material === material)) material.dispose()
+    }
+  }
+
+  /** 静态车道按共享材质合并，减少拖动视角时每条车道、箭头的独立 draw call。 */
+  private mergePaths() {
+    const batches = new Map<THREE.Material, THREE.Mesh[]>()
+    for (const child of this.pathsGroup.children) {
+      if (!(child instanceof THREE.Mesh) || Array.isArray(child.material)) continue
+      const meshes = batches.get(child.material) ?? []
+      meshes.push(child)
+      batches.set(child.material, meshes)
+    }
+    for (const [material, meshes] of batches) {
+      if (meshes.length < 2) continue
+      const copies = meshes.map(mesh => {
+        mesh.updateMatrix()
+        return mesh.geometry.clone().applyMatrix4(mesh.matrix)
+      })
+      const merged = mergeGeometries(copies)
+      copies.forEach(geometry => geometry.dispose())
+      if (!merged) continue
+      const batch = new THREE.Mesh(merged, material)
+      batch.renderOrder = meshes[0].renderOrder
+      for (const mesh of meshes) {
+        mesh.removeFromParent()
+        mesh.geometry.dispose()
+      }
+      this.pathsGroup.add(batch)
+    }
   }
 
   private rebuildZones(zones: Zone[]) {
-    this.zonesGroup.clear()
+    this.clearGroup(this.zonesGroup)
     for (const zone of zones) {
       if (!zone.vertices || zone.vertices.length < 3) continue
       const color = zone.type === 'forbidden' ? 0xf56c6c : zone.type === 'ramp' ? 0xe6a23c : 0x409eff
@@ -614,15 +764,11 @@ export class MapCanvas {
     inner.className = 'nd-label-inner nd-label-inner--robot'
     inner.textContent = code
     el.appendChild(inner)
-    const codeLine = document.createElement('div')
-    codeLine.className = 'nd-label-code--robot'
-    codeLine.textContent = code
-    el.appendChild(codeLine)
     const label = new CSS2DObject(el)
     label.position.set(0, 0.4, 0.15)
     root.add(label)
 
-    return { root, body, label, code, shown: null }
+    return { root, body, label, code, shown: null, motion: null, badgeKey: '' }
   }
 
   // ==================== 相机 ====================
@@ -665,24 +811,67 @@ export class MapCanvas {
       if (mat?.resolution) lineMats.push(mat)
     })
     lineMats.forEach(mat => mat.resolution.set(w, h))
+    this.invalidate()
   }
 
-  private animate = () => {
+  /** 删除场景对象不等于释放 GPU 资源；共享材质在本组内只释放一次。 */
+  private clearGroup(group: THREE.Object3D) {
+    const geometries = new Set<THREE.BufferGeometry>()
+    const materials = new Set<THREE.Material>()
+    const textures = new Set<THREE.Texture>()
+    group.traverse(obj => {
+      if (obj instanceof CSS2DObject) obj.element.remove()
+      const mesh = obj as THREE.Mesh
+      if (mesh.geometry) geometries.add(mesh.geometry)
+      const mats = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : []
+      for (const mat of mats) {
+        materials.add(mat)
+        for (const value of Object.values(mat)) {
+          if (value instanceof THREE.Texture) textures.add(value)
+        }
+      }
+    })
+    geometries.forEach(geometry => geometry.dispose())
+    textures.forEach(texture => texture.dispose())
+    materials.forEach(material => material.dispose())
+    group.clear()
+  }
+
+  private animate = (now: number) => {
+    this.animationId = 0
     if (this.disposed) return
-    this.animationId = requestAnimationFrame(this.animate)
+    let moving = false
+    for (const mesh of this.robots.values()) {
+      const motion = mesh.motion
+      if (!motion) continue
+      const t = Math.min(1, Math.max(0, (now - motion.startedAt) / 300))
+      mesh.root.position.x = THREE.MathUtils.lerp(motion.x, motion.target.x, t)
+      mesh.root.position.y = THREE.MathUtils.lerp(motion.y, motion.target.y, t)
+      const delta = Math.atan2(Math.sin(motion.target.yaw - motion.yaw), Math.cos(motion.target.yaw - motion.yaw))
+      mesh.body.rotation.z = motion.yaw + delta * t
+      if (t === 1) mesh.motion = null
+      else moving = true
+    }
     this.controls.update()
     this.renderer.render(this.scene, this.camera)
     this.labelRenderer.render(this.scene, this.camera)
+    if (moving) this.invalidate()
   }
 
   dispose() {
+    if (this.disposed) return
     this.disposed = true
     cancelAnimationFrame(this.animationId)
     this.renderer.domElement.removeEventListener('contextmenu', this.onContextMenu)
     this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDown)
     this.renderer.domElement.removeEventListener('pointerup', this.onPointerUp)
     this.resizeObs.disconnect()
+    document.removeEventListener('visibilitychange', this.onVisibilityChange)
+    this.controls.removeEventListener('change', this.invalidate)
     this.controls.dispose()
+    this.clearGroup(this.scene)
+    this.robots.clear()
+    this.pointGroups.clear()
     this.renderer.dispose()
     this.container.innerHTML = ''
   }
@@ -694,4 +883,7 @@ interface RobotMesh {
   label: CSS2DObject
   code: string
   shown: { x: number; y: number; yaw: number } | null
+  motion: { x: number; y: number; yaw: number; startedAt: number;
+    target: { x: number; y: number; yaw: number } } | null
+  badgeKey: string
 }

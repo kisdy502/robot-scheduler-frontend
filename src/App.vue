@@ -30,10 +30,19 @@
             <el-icon><Lightning /></el-icon>
             <template #title>充电桩</template>
           </el-menu-item>
+          <el-menu-item index="/qc-sim">
+            <el-icon><Opportunity /></el-icon>
+            <template #title>质检模拟</template>
+          </el-menu-item>
+          <el-menu-item index="/charge-sim">
+            <el-icon><Odometer /></el-icon>
+            <template #title>充电模拟</template>
+          </el-menu-item>
         </el-menu>
       </el-aside>
       <el-main class="app-main">
-        <router-view />
+        <!-- 同一模拟器组件承载质检/充电两个路由，按路由区分实例以重新加载业务配置与点位。 -->
+        <router-view :key="route.name" />
       </el-main>
     </div>
   </el-config-provider>

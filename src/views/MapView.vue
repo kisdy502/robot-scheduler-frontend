@@ -18,6 +18,16 @@
       </el-tag>
     </div>
 
+    <div class="active-routes">
+      <div>活动路线（{{ routes.length }}）<span v-if="routeError"> · 路线读取失败，保留上次结果</span></div>
+      <div v-if="!routes.length">暂无已取得交通资源的路线</div>
+      <button v-for="r in routes" :key="r.robot_code" class="active-route" @click="onRobotClicked(r.robot_code)">
+        <b>{{ robotShortName(r.robot_code) }}</b> · {{ r.task_id }}
+        <div>{{ r.waypoints.map(p => p.id).join(' → ') }}</div>
+        <small>已到达 {{ r.waypoints[r.progress]?.id || '--' }}</small>
+      </button>
+    </div>
+
     <!-- 右上信息（可折叠） -->
     <div class="map-overlay">
       <el-popover placement="left" :width="160" trigger="click">
@@ -34,25 +44,25 @@
       </el-popover>
     </div>
 
-    <!-- 右键菜单 -->
+    <!-- 右键菜单（新版架构：调度只管移动，质检动作由"质检模拟"模块模拟上层应用下发） -->
     <teleport to="body">
       <div v-if="ctxMenu.visible" class="ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
            @click.stop>
         <div class="ctx-menu-header">{{ ctxMenu.point?.name }} ({{ ctxMenu.point?.id }})</div>
         <template v-if="ctxMenu.point?.type === 'workstation'">
-          <div class="ctx-menu-item" @click="openDispatch('quality_inspection')">发起质检任务</div>
+          <div class="ctx-menu-item" @click="openDispatch('quality_inspection')">移动到作业点</div>
         </template>
         <template v-if="ctxMenu.point?.type === 'charge'">
-          <div class="ctx-menu-item" @click="openDispatch('charge')">前往充电</div>
+          <div class="ctx-menu-item" @click="openDispatch('charge')">移动到充电位</div>
         </template>
         <template v-if="ctxMenu.point?.type === 'parking'">
-          <div class="ctx-menu-item" @click="openDispatch('return_home')">前往归巢休息</div>
+          <div class="ctx-menu-item" @click="openDispatch('return_home')">移动到归巢点</div>
         </template>
         <div class="ctx-menu-item" @click="openDispatch('go_to_place')">移动到此点</div>
       </div>
     </teleport>
 
-    <!-- 任务下发对话框（选机器人） -->
+    <!-- 移动任务对话框（新版架构：机器人选定下发，调度不做自动分配） -->
     <el-dialog
       v-model="dispatchDlg.visible"
       :title="`${zhType(dispatchDlg.taskType)} → ${dispatchDlg.point?.name || dispatchDlg.point?.id || ''}`"
@@ -60,14 +70,9 @@
       align-center
     >
       <div class="dlg-tip">
-        不选择机器人则由调度自动分配（按 ETA + 电量 + 状态评分择优，分配结果会弹出提示）；
-        选择指定机器人则直接下发执行。
+        选定机器人直接下发移动任务（规划路径 → 导航到点 → 交通管制，到位即完成）。
       </div>
       <el-radio-group v-model="dispatchDlg.selected" class="dlg-radios">
-        <el-radio value="" border class="dlg-radio auto">
-          <span class="robot-name">自动分配</span>
-          <span class="robot-meta">调度评分择优</span>
-        </el-radio>
         <el-radio
           v-for="r in dispatchDlg.candidates"
           :key="r.robot_code"
@@ -85,8 +90,8 @@
       </el-radio-group>
       <template #footer>
         <el-button @click="dispatchDlg.visible = false">取消</el-button>
-        <el-button type="primary" :loading="dispatchDlg.submitting" @click="confirmDispatch">
-          {{ dispatchDlg.selected ? '直接下发' : '自动分配下发' }}
+        <el-button type="primary" :disabled="!dispatchDlg.selected" @click="confirmDispatch">
+          下发移动（后台执行）
         </el-button>
       </template>
     </el-dialog>
@@ -94,24 +99,26 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted, computed, h } from 'vue'
-import { ElMessage, ElNotification } from 'element-plus'
+import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
+import { ElMessage } from 'element-plus'
 import { MapCanvas } from '@/three/MapCanvas'
 import type { PickedPoint } from '@/three/MapCanvas'
 import { schedulerApi } from '@/api/scheduler'
-import axios from 'axios'
 import { rememberRobotNames } from '@/utils/robotNames'
 import type { Waypoint, PathInfo, Zone, RobotInfo, ActiveRoute } from '@/types'
 
 const canvasRef = ref<HTMLElement>()
 let canvas: MapCanvas | null = null
-let timer: ReturnType<typeof setInterval> | null = null
+let timer: ReturnType<typeof setTimeout> | null = null
+let polling = false
+let stopped = true
 let clickOutsideHandler: (() => void) | null = null
 
 const mapName = ref('')
 const mapVersion = ref('')
 const robots = ref<RobotInfo[]>([])
 const routes = ref<ActiveRoute[]>([])
+const routeError = ref(false)
 const selectedRobot = ref('')
 const showAllRoutes = ref(true)
 const lastUpdate = ref('')
@@ -148,6 +155,7 @@ const dispatchDlg = reactive({
 
 const canDispatch = (r: RobotInfo) =>
   r.online_status === 'online' && r.mode === 'idle' && r.dispatchable
+  && !inFlightRobots.value.includes(r.robot_code)
 
 const zhMode = (m: string) => {
   const map: Record<string, string> = { idle: '空闲', running: '执行中', charging: '充电中', offline: '离线' }
@@ -169,166 +177,34 @@ function openDispatch(taskType: string) {
   }
 }
 
-/** 对话框确认：指定机器人直接下发；不选走自动分配（下发后后台轮询评分结果） */
+/** 对话框确认：选定机器人后台执行移动业务流（抢占→移动→释放），立即关窗可继续给其他机器人下发 */
+const inFlightRobots = ref<string[]>([])
 async function confirmDispatch() {
   const point = dispatchDlg.point
-  if (!point) return
-  dispatchDlg.submitting = true
+  if (!point || !dispatchDlg.selected) return
+  const robotCode = dispatchDlg.selected
+  const taskType = dispatchDlg.taskType
+  dispatchDlg.visible = false
+  inFlightRobots.value.push(robotCode)
+  const name = robots.value.find(r => r.robot_code === robotCode)?.robot_name ?? robotCode
+  ElMessage.info(`已下发 ${name}（${robotCode}）${zhType(taskType)} → ${point.name || point.id}，后台执行中`)
   try {
-    if (dispatchDlg.selected) {
-      await dispatchToRobot(dispatchDlg.taskType, point, dispatchDlg.selected)
-    } else {
-      // 只 await 下发动作（POST），分配结果轮询放后台——不阻塞 submitting，
-      // 否则第二次下发要等上一次 20s 轮询结束才能操作
-      const reqId = await dispatchAutoSubmit(dispatchDlg.taskType, point)
-      if (reqId) {
-        pollAssignment(reqId, dispatchDlg.taskType, point)
-      }
-    }
+    const { runMoveFlow } = await import('@/utils/moveFlow')
+    const result = await runMoveFlow({
+      robotCode, pointId: String(point.id),
+      onEvent: (step, phase, text) => console.info(`[移动业务流 ${robotCode}] ${step} ${phase}: ${text}`),
+    })
+    ElMessage.success(`${name} 移动完成（任务 ${result.taskId}）`)
+  } catch (e: any) {
+    ElMessage.error(`${name} 移动失败: ${e?.message ?? '未知错误'}`)
   } finally {
-    dispatchDlg.submitting = false
+    inFlightRobots.value = inFlightRobots.value.filter(c => c !== robotCode)
   }
-}
-
-/** 手动下发的任务模板 code（机器人侧按模板 code 执行 start-activity，非固定类型）：
- *  充电模板 code 随平台创建的模板变化，可用 VITE_CHARGE_TEMPLATE_CODE 环境变量覆盖 */
-const CHARGE_TEMPLATE_CODE = (import.meta.env.VITE_CHARGE_TEMPLATE_CODE as string | undefined) ?? 'back-charge'
-const QC_TEMPLATE_CODE = (import.meta.env.VITE_QC_TEMPLATE_CODE as string | undefined) ?? 'QC_CONTEXT'
-
-function templateCodeOf(taskType: string): string | undefined {
-  if (taskType === 'charge') return CHARGE_TEMPLATE_CODE
-  if (taskType === 'quality_inspection') return QC_TEMPLATE_CODE
-  return undefined
-}
-
-/** 指定机器人直接下发 */
-async function dispatchToRobot(taskType: string, point: PickedPoint, robotCode: string) {
-  const body: Record<string, unknown> = {
-    taskflow_id: `tf-ctx-${Date.now()}`,
-    task_id: `ctx-${taskType}-${Date.now()}`,
-    task_template_type: taskType,
-    task_template_code: templateCodeOf(taskType),
-    nav_end_point: point.id,
-    robot_code: robotCode,
-    end_action: 'standby',
-  }
-  if (taskType === 'quality_inspection') {
-    body.parameters = { task_template_code: templateCodeOf(taskType) }
-  }
-  try {
-    const res = await axios.post('/api/v1/scheduler/dispatch_task', body, {
-      headers: { 'Content-Type': 'application/json' },
-    })
-    const d = res.data
-    if (d.status !== 0) {
-      ElMessage.error(`下发失败: ${d.msg ?? d.detail ?? '未知错误'}`)
-      return
-    }
-    const name = robots.value.find(r => r.robot_code === robotCode)?.robot_name ?? robotCode
-    ElMessage.success(`已指派 ${name}（${robotCode}）执行${zhType(taskType)} → ${point.name || point.id}`)
-    dispatchDlg.visible = false
-  } catch (e: any) {
-    ElMessage.error(`下发失败: ${e?.response?.data?.detail ?? e?.message ?? '网络错误'}`)
-  }
-}
-
-/** 自动分配：下发（POST），成功即关对话框并返回请求 ID */
-async function dispatchAutoSubmit(taskType: string, point: PickedPoint): Promise<string | null> {
-  const body: Record<string, unknown> = {
-    taskflow_id: `tf-ctx-${Date.now()}`,
-    task_id: `ctx-${taskType}-${Date.now()}`,
-    task_template_type: taskType,
-    task_template_code: templateCodeOf(taskType),
-    nav_end_point: point.id,
-    end_action: 'standby',
-  }
-  if (taskType === 'quality_inspection') {
-    body.parameters = { task_template_code: templateCodeOf(taskType) }
-  }
-  try {
-    const res = await axios.post('/api/v1/scheduler/dispatch_task', body, {
-      headers: { 'Content-Type': 'application/json' },
-    })
-    const d = res.data
-    if (d.status !== 0) {
-      ElMessage.error(`下发失败: ${d.msg ?? d.detail ?? '未知错误'}`)
-      return null
-    }
-    ElMessage.info(`已下发${zhType(taskType)} → ${point.name || point.id}，等待调度分配...`)
-    dispatchDlg.visible = false
-    return d.data?.scheduler_request_id
-  } catch (e: any) {
-    ElMessage.error(`下发失败: ${e?.response?.data?.detail ?? e?.message ?? '网络错误'}`)
-    return null
-  }
-}
-
-/** 后台轮询分配结果（不阻塞操作；最多 20 秒），分配完成弹评分卡片 */
-async function pollAssignment(reqId: string, taskType: string, point: PickedPoint) {
-  for (let i = 0; i < 20; i++) {
-    await new Promise(r => setTimeout(r, 1000))
-    try {
-      const res = await axios.get(`/api/v1/scheduler/tasks/status?scheduler_request_id=${reqId}`)
-      const d = res.data?.data
-      if (!d) continue
-
-      if (d.robot_code && (d.assignment_trace || d.rmf_task_id)) {
-        showAssignmentCard(taskType, point, d.robot_code, d.assignment_summary, d.assignment_trace)
-        return
-      }
-      if (d.execution_final) {
-        ElMessage.error(`${zhType(taskType)} ${point.name || point.id}: ${d.message ?? '任务已结束'}`)
-        return
-      }
-    } catch { /* 继续轮询 */ }
-  }
-  ElMessage.warning(`任务仍在排队中，可在任务历史页查看（请求 ID: ${reqId.substring(0, 8)}）`)
-}
-
-/** 分配结果通知：摘要 + 评分表（ETA/电量惩罚/总分） */
-function showAssignmentCard(taskType: string, point: PickedPoint, robotCode: string,
-                            summary: string, trace: any[]) {
-  const robot = robots.value.find(r => r.robot_code === robotCode)
-  const robotName = robot?.robot_name ?? robotCode
-
-  const rows = (trace ?? []).map((c: any) => ({
-    name: c.robot_name || c.robot_code,
-    eta: c.eta_seconds,
-    battery: c.battery_percent,
-    penalty: c.battery_penalty_seconds,
-    total: c.total_cost,
-    selected: c.selected,
-  }))
-
-  ElNotification({
-    title: `${zhType(taskType)} → ${point.name || point.id}，已分配 ${robotName}`,
-    message: h('div', { class: 'assign-card' }, [
-      h('div', { class: 'assign-summary' },
-        summary || `已分配给 ${robotName}（${robotCode}）`),
-      rows.length > 0 && h('table', { class: 'assign-table' }, [
-        h('thead', null, h('tr', null, [
-          h('th', null, '机器人'), h('th', null, 'ETA(s)'), h('th', null, '电量'),
-          h('th', null, '电量惩罚'), h('th', null, '总分'),
-        ])),
-        h('tbody', null, rows.map(r => h('tr', { class: r.selected ? 'winner' : '' }, [
-          h('td', { class: 'c-name' }, r.selected ? `★ ${r.name}` : r.name),
-          h('td', { class: 'c-num' }, r.eta),
-          h('td', { class: 'c-num' }, r.battery != null && r.battery >= 0 ? r.battery + '%' : '未知'),
-          h('td', { class: 'c-num' }, r.penalty),
-          h('td', { class: 'c-num' }, h('b', null, r.total)),
-        ]))),
-      ]),
-    ]),
-    type: 'success',
-    duration: 10000,
-    position: 'bottom-right',
-    customClass: 'assign-notify',
-  })
 }
 
 const zhType = (t: string) => {
   const m: Record<string, string> = {
-    quality_inspection: '质检任务', charge: '充电任务', return_home: '归巢任务', go_to_place: '移动任务',
+    quality_inspection: '移动到作业点', charge: '移动到充电位', return_home: '移动到归巢点', go_to_place: '移动任务',
   }
   return m[t] ?? t
 }
@@ -395,18 +271,33 @@ async function loadMapImage() {
 }
 
 async function pollRobots() {
+  if (stopped || polling || document.hidden) return
+  polling = true
   try {
     const [robotList, routeList] = await Promise.all([
       schedulerApi.robots(),
-      schedulerApi.activeRoutes().catch(() => [] as ActiveRoute[]),
+      schedulerApi.activeRoutes().then(list => { routeError.value = false; return list })
+        .catch(() => { routeError.value = true; return null }),
     ])
+    if (stopped) return
     robots.value = robotList
     rememberRobotNames(robotList)
-    routes.value = routeList
+    // 路线接口暂时失败时保留上一帧，不反复清空、重建路线造成闪烁。
+    if (routeList) routes.value = routeList
     canvas?.updateRobots(robots.value, selectedRobot.value)
     canvas?.updateRoutes(routes.value, selectedRobot.value, showAllRoutes.value)
     lastUpdate.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
-  } catch { /* */ }
+  } catch { /* 保留上一帧，下一轮恢复 */ }
+  finally {
+    polling = false
+    // 请求完成后再安排下一次，慢请求不会重叠，也不会被旧响应覆盖。
+    if (!stopped && !document.hidden) timer = setTimeout(pollRobots, 1000)
+  }
+}
+
+function onVisibilityChange() {
+  if (timer) { clearTimeout(timer); timer = null }
+  if (!document.hidden) void pollRobots()
 }
 
 /** 选中状态变化即时刷新画布（不等下一轮轮询） */
@@ -432,20 +323,23 @@ function robotShortName(code: string) {
 onMounted(() => {
   if (canvasRef.value) {
     canvas = new MapCanvas(canvasRef.value)
+    stopped = false
     canvas.onPresetChange = (p) => { preset.value = p }
     canvas.onPointContextMenu = showCtxMenu
     canvas.onRobotClick = onRobotClicked
     loadMap()
     loadMapImage()
     pollRobots()
-    timer = setInterval(pollRobots, 1000)
+    document.addEventListener('visibilitychange', onVisibilityChange)
     clickOutsideHandler = hideCtxMenu
     document.addEventListener('click', clickOutsideHandler)
   }
 })
 
 onUnmounted(() => {
-  if (timer) clearInterval(timer)
+  stopped = true
+  if (timer) clearTimeout(timer)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
   if (clickOutsideHandler) document.removeEventListener('click', clickOutsideHandler)
   canvas?.dispose()
   canvas = null
@@ -454,6 +348,8 @@ onUnmounted(() => {
 
 <style scoped>
 .map-view { position: relative; height: calc(100vh - 24px); }
+.active-routes { position: absolute; bottom: 12px; left: 12px; max-width: 480px; max-height: 28vh; overflow: auto; padding: 8px; border-radius: 6px; background: rgba(255,255,255,.92); font-size: 12px; }
+.active-route { display: block; width: 100%; padding: 6px 0; border: 0; border-top: 1px solid #ebeef5; background: transparent; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
 .map-canvas { width: 100%; height: 100%; overflow: hidden; border-radius: 6px; background: #f5f7fa; }
 .map-toolbar { position: absolute; top: 12px; left: 12px; z-index: 10; display: flex; align-items: center; }
 .route-toggle-label { font-size: 12px; color: #606266; margin-right: 6px; }
@@ -485,24 +381,6 @@ onUnmounted(() => {
 .dlg-radios { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 .dlg-radio { margin: 0; width: 100%; height: auto; padding: 8px 12px; }
 .dlg-radio :deep(.el-radio__label) { display: flex; flex-direction: column; gap: 2px; white-space: normal; }
-.dlg-radio.auto { border-color: #409eff; }
 .robot-name { font-size: 13px; font-weight: 500; color: #303133; }
 .robot-meta { font-size: 11px; color: #909399; }
-
-/* 分配评分通知卡片 */
-.el-notification.assign-notify { width: 470px; }
-.assign-card { max-width: 440px; }
-.assign-summary {
-  font-size: 12px; color: #606266; margin-bottom: 8px; line-height: 1.5;
-  background: #f5f7fa; border-radius: 4px; padding: 6px 10px;
-}
-.assign-table { border-collapse: collapse; font-size: 12px; width: 100%; table-layout: fixed; }
-.assign-table th, .assign-table td {
-  border: 1px solid #ebeef5; padding: 4px 8px; text-align: center; white-space: nowrap;
-  overflow: hidden; text-overflow: ellipsis;
-}
-.assign-table th { background: #f5f7fa; color: #606266; font-weight: 500; }
-.assign-table td.c-num { font-family: Consolas, monospace; }
-.assign-table td.c-name { text-align: left; }
-.assign-table tr.winner td { background: #f0f9eb; color: #67c23a; font-weight: 600; }
 </style>

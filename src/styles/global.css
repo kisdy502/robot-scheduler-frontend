@@ -12,17 +12,40 @@ body {
   padding: 0 5px; background: rgba(255,255,255,0.9); border: 1px solid #cdd0d8;
   border-radius: 3px; color: #303133; white-space: nowrap;
 }
-.nd-label-inner--robot {
-  background: rgba(38,42,50,0.78); border-color: #4a5060; color: #fff;
-  font-weight: 500; font-size: 10px; line-height: 14px; padding: 0 5px;
-  transform: translateY(-6px);
-}
-.nd-label-code--robot {
-  transform: translateY(-7px); font-size: 9px; line-height: 11px;
-  text-align: center; color: rgba(255,255,255,0.85); background: rgba(38,42,50,0.6);
-  border-radius: 2px; padding: 0 4px; margin: 1px auto 0; width: fit-content;
-  font-family: Consolas, monospace; white-space: nowrap;
-}
+    .nd-label-inner--robot {
+      background: rgba(38,42,50,0.78); border-color: #4a5060; color: #fff;
+      font-weight: 500; font-size: 14px; line-height: 20px; padding: 2px 8px;
+      transform: translateY(-6px);
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .nd-label-code--robot {
+      transform: translateY(-7px); font-size: 9px; line-height: 11px;
+      text-align: center; color: rgba(255,255,255,0.85); background: rgba(38,42,50,0.6);
+      border-radius: 2px; padding: 0 4px; margin: 1px auto 0; width: fit-content;
+      font-family: Consolas, monospace; white-space: nowrap;
+    }
+
+    /* 机器人紧凑徽标：[🔒占用][状态图标] 名字(≤6字) [5 格电池条]（尺寸放大 ~50%） */
+    .nd-ricon { font-size: 15px; font-weight: 700; line-height: 1; }
+    .nd-rlock { font-size: 13px; margin-right: -1px; }
+    .nd-rname { font-weight: 500; }
+    /* 电池条带深色壳槽：与标签底色（充电绿/移动蓝/错误红）形成对比，红/橙/绿格子在壳内始终清晰 */
+    .nd-batt {
+      display: inline-flex; gap: 1px; align-items: center;
+      background: rgba(0, 0, 0, 0.38); border-radius: 2px; padding: 2px 3px;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+    }
+    .nd-batt i {
+      width: 4px; height: 10px; border-radius: 0.5px;
+      background: rgba(255, 255, 255, 0.16); display: inline-block;
+    }
+    .nd-batt i.on.r { background: #ff8080; }
+    .nd-batt i.on.o { background: #f5c26b; }
+    .nd-batt i.on.g { background: #85e26d; }
+    .nd-label-inner--robot.is-offline { opacity: 0.55; }
+
+
+
 
 /* 地图画布光标 */
 .map-canvas-el { cursor: grab; }
