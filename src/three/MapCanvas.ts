@@ -4,11 +4,9 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js'
-import { Line2 } from 'three/examples/jsm/lines/Line2.js'
-import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js'
-import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js'
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js'
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js'
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { pointStyle } from '@/utils/pointStyle'
 import { robotDisplayName } from '@/utils/robotNames'
@@ -331,14 +329,17 @@ export class MapCanvas {
     if (!this.selectedPointId) return
     const group = this.pointGroups.get(this.selectedPointId)
     if (!group) return
+    // 立体线圈：带孔环形拉伸出微高度，套在点位圆盘外缘（与点位凸台同风格）
+    const ringShape = new THREE.Shape()
+    ringShape.absarc(0, 0, POINT_R * 1.16, 0, Math.PI * 2, false)
+    const hole = new THREE.Path()
+    hole.absarc(0, 0, POINT_R * 1.08, 0, Math.PI * 2, true)
+    ringShape.holes.push(hole)
     const ring = new THREE.Mesh(
-      new THREE.RingGeometry(POINT_R * 1.08, POINT_R * 1.16, 36),
-      new THREE.MeshBasicMaterial({
-        color: 0xff9c3f, transparent: true, opacity: 0.95,
-        side: THREE.DoubleSide, depthWrite: false,
-      }),
+      new THREE.ExtrudeGeometry(ringShape, { depth: 0.012, bevelEnabled: false }),
+      new THREE.MeshBasicMaterial({ color: 0xff9c3f, transparent: true, opacity: 0.95 }),
     )
-    ring.position.z = POINT_H + 0.02
+    ring.position.z = POINT_H
     ring.renderOrder = 5
     group.add(ring)
     this.selectionRing = ring
@@ -510,9 +511,8 @@ export class MapCanvas {
   // ==================== 活动路线 ====================
 
   /**
-   * 更新活动路线渲染：已走段灰色细线、剩余段彩色虚线、终点色环。
-   * 凌乱控制：showAll=false 时仅画选中机器人的路线（聚焦态加粗提亮）。
-   * 线用 Line2（像素线宽）：THREE.Line 固定 1px，浅底图上不可见。
+   * 更新活动路线渲染：已走段灰色实心圆管、剩余段彩色虚线圆管、终点立体色环。
+   * 立体化：点位/车道均有高度，平贴地面的像素线视觉上"陷下去"，统一改为有半径的圆管。
    */
   updateRoutes(routes: ActiveRoute[], selectedCode = '', showAll = true) {
     if (this.disposed) return
@@ -525,7 +525,6 @@ export class MapCanvas {
     this.routesKey = key
     this.clearGroup(this.routesGroup)
     const scale = this.sceneScale
-    const res = this.renderer.getSize(new THREE.Vector2())
     for (const route of visibleRoutes) {
       const focused = route.robot_code === selectedCode
       if (!showAll && !focused) continue
@@ -535,50 +534,82 @@ export class MapCanvas {
       // 车道条带顶面 0.02 之上（避免被立体条带遮挡/穿插）
       const z = focused ? 0.05 : 0.04
 
-      // 已走段：灰色实线（深一档保证可见：浅灰细线在浅底图上等同隐形）
+      // 已走段：灰色实心圆管（深一档保证可见：浅灰细线在浅底图上等同隐形）
       const cut = Math.min(route.progress, pts.length - 1)
       const traveled = pts.slice(0, cut + 1)
+      const traveledR = focused ? 0.014 : 0.011
       if (traveled.length >= 2) {
-        this.routesGroup.add(this.buildFatLine(traveled, z, new LineMaterial({
-          color: 0x7d8794, linewidth: focused ? 3 : 2,
-          transparent: true, opacity: focused ? 0.6 : 0.45,
-        }), res))
+        this.routesGroup.add(this.buildTube(traveled, z + traveledR, traveledR,
+          new THREE.MeshBasicMaterial({ color: 0x7d8794, transparent: true, opacity: focused ? 0.6 : 0.45 })))
       }
 
-      // 剩余段：彩色虚线（聚焦提亮加粗）；dash 尺寸用固定世界米制——
+      // 剩余段：彩色虚线圆管（聚焦提亮加粗）；dash 用固定世界米制——
       // 不能乘 sceneScale（大地图 scale≈3 时一段虚线 3.9m 比路段还长，视觉上退化为实线）
       const remaining = pts.slice(cut)
+      const routeR = focused ? 0.022 : 0.017
       if (remaining.length >= 2) {
-        this.routesGroup.add(this.buildFatLine(remaining, z, new LineMaterial({
-          color, linewidth: focused ? 7 : 5,
-          transparent: true, opacity: focused ? 0.95 : 0.7,
-          dashed: true, dashSize: 0.6, gapSize: 0.4,
-        }), res, true))
+        const dashMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: focused ? 0.95 : 0.7 })
+        for (const poly of this.sliceDashes(remaining, 0.6, 0.4)) {
+          this.routesGroup.add(this.buildTube(poly, z + routeR, routeR, dashMat))
+        }
       }
 
-      // 终点细色环（目标点标识，同机器人色）
+      // 终点立体色环（目标点标识，同机器人色；torus 平躺地面）
       const dest = pts[pts.length - 1]
+      const tubeR = 0.035 * scale
       const ring = new THREE.Mesh(
-        new THREE.RingGeometry(0.18 * scale, 0.26 * scale, 32),
-        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, side: THREE.DoubleSide }),
+        new THREE.TorusGeometry(0.22 * scale, tubeR, 10, 40),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 }),
       )
-      ring.position.set(dest.x!, dest.y!, z + 0.01)
+      ring.position.set(dest.x!, dest.y!, z + tubeR)
       this.routesGroup.add(ring)
     }
     this.invalidate()
   }
 
-  /** 像素级线宽折线（Line2；dashed 需 computeLineDistances） */
-  private buildFatLine(pts: ActiveRoute['waypoints'], z: number, material: LineMaterial,
-                       resolution: THREE.Vector2, dashed = false): Line2 {
-    const positions: number[] = []
-    for (const p of pts) positions.push(p.x!, p.y!, z)
-    const geo = new LineGeometry()
-    geo.setPositions(positions)
-    material.resolution.copy(resolution)
-    const line = new Line2(geo, material)
-    if (dashed) line.computeLineDistances()
-    return line
+  /** 沿折线的立体圆管（CurvePath 保留折角；z 为管底，管心抬半径件防穿车道） */
+  private buildTube(poly: Array<{ x: number; y: number }>, zBottom: number, radius: number,
+                    material: THREE.Material): THREE.Mesh {
+    const path = new THREE.CurvePath<THREE.Vector3>()
+    for (let i = 0; i + 1 < poly.length; i++) {
+      path.add(new THREE.LineCurve3(
+        new THREE.Vector3(poly[i].x, poly[i].y, zBottom + radius),
+        new THREE.Vector3(poly[i + 1].x, poly[i + 1].y, zBottom + radius)))
+    }
+    return new THREE.Mesh(
+      new THREE.TubeGeometry(path, Math.max(poly.length * 8, 8), radius, 8, false), material)
+  }
+
+  /** 按世界米制把折线切成 dash/gap 交替的子折线（立体虚线管段用；保留折点处直角） */
+  private sliceDashes(pts: ActiveRoute['waypoints'], dash: number, gap: number): Array<Array<{ x: number; y: number }>> {
+    const cum: number[] = [0]
+    for (let i = 1; i < pts.length; i++) {
+      cum.push(cum[i - 1] + Math.hypot(pts[i].x! - pts[i - 1].x!, pts[i].y! - pts[i - 1].y!))
+    }
+    const total = cum[cum.length - 1]
+    if (total <= 0) return []
+    const pointAt = (d: number) => {
+      for (let i = 1; i < cum.length; i++) {
+        if (d <= cum[i]) {
+          const t = (d - cum[i - 1]) / Math.max(cum[i] - cum[i - 1], 1e-9)
+          return { x: pts[i - 1].x! + (pts[i].x! - pts[i - 1].x!) * t, y: pts[i - 1].y! + (pts[i].y! - pts[i - 1].y!) * t }
+        }
+      }
+      return { x: pts[pts.length - 1].x!, y: pts[pts.length - 1].y! }
+    }
+    const polys: Array<Array<{ x: number; y: number }>> = []
+    let start = 0
+    while (start < total) {
+      const end = Math.min(start + dash, total)
+      const poly: Array<{ x: number; y: number }> = [pointAt(start)]
+      for (let i = 1; i < pts.length - 1; i++) {
+        if (cum[i] > start && cum[i] < end) poly.push({ x: pts[i].x!, y: pts[i].y! })
+      }
+      poly.push(pointAt(end))
+      polys.push(poly)
+      start = end + gap
+    }
+    return polys
   }
 
   // ==================== 点位构建 ====================
@@ -760,8 +791,12 @@ export class MapCanvas {
           arrowShape.lineTo(-s * 0.2, s * 0.3)
           arrowShape.lineTo(-s * 0.2, -s * 0.3)
           arrowShape.closePath()
-          const arrow = new THREE.Mesh(new THREE.ShapeGeometry(arrowShape), arrowMat)
-          arrow.position.set(p.x + tan.x * offsetUnits * s, p.y + tan.y * offsetUnits * s, LANE_H + 0.005)
+          // 立体箭头：拉伸薄片贴在车道顶面上（与点位/车道同风格的微高度）
+          const arrow = new THREE.Mesh(
+            new THREE.ExtrudeGeometry(arrowShape, { depth: 0.012, bevelEnabled: false }),
+            arrowMat,
+          )
+          arrow.position.set(p.x + tan.x * offsetUnits * s, p.y + tan.y * offsetUnits * s, LANE_H)
           arrow.rotation.z = angle
           arrow.renderOrder = 1
           this.pathsGroup.add(arrow)
@@ -916,12 +951,8 @@ export class MapCanvas {
     this.camera.updateProjectionMatrix()
     this.renderer.setSize(w, h)
     this.labelRenderer.setSize(w, h)
-    // Line2 像素线宽依赖画布分辨率（路线 + 机器人轮廓）
+    // Line2 像素线宽依赖画布分辨率（机器人轮廓描边；路线已立体化为圆管，无分辨率依赖）
     const lineMats: LineMaterial[] = []
-    this.routesGroup.traverse(obj => {
-      const mat = (obj as Line2).material as LineMaterial | undefined
-      if (mat?.resolution) lineMats.push(mat)
-    })
     this.robotsGroup.traverse(obj => {
       const mat = (obj as LineSegments2).material as LineMaterial | undefined
       if (mat?.resolution) lineMats.push(mat)
