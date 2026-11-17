@@ -23,7 +23,7 @@
       <el-table-column label="占用者" width="130">
         <template #default="{ row }">
           <span v-if="row.occupied_by">{{ row.occupied_by }}</span>
-          <span v-else style="color:#c0c4cc">--</span>
+          <span v-else style="color:var(--rs-text-4)">--</span>
         </template>
       </el-table-column>
       <el-table-column label="启用" width="60" align="center">
@@ -33,7 +33,7 @@
       </el-table-column>
       <el-table-column label="更新" width="160">
         <template #default="{ row }">
-          <span style="color:#909399;font-size:11px">{{ row.updated_at ? new Date(row.updated_at).toLocaleString('zh-CN', { hour12: false }) : '' }}</span>
+          <span style="color:var(--rs-text-3);font-size:11px">{{ row.updated_at ? new Date(row.updated_at).toLocaleString('zh-CN', { hour12: false }) : '' }}</span>
         </template>
       </el-table-column>
     </el-table>

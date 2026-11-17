@@ -39,6 +39,9 @@
             <template #title>充电模拟</template>
           </el-menu-item>
         </el-menu>
+        <div class="theme-toggle" :title="isDark ? '切换浅色模式' : '切换暗色模式'" @click="toggleTheme()">
+          <el-icon :size="18"><Moon v-if="isDark" /><Sunny v-else /></el-icon>
+        </div>
       </el-aside>
       <el-main class="app-main">
         <!-- 同一模拟器组件承载质检/充电两个路由，按路由区分实例以重新加载业务配置与点位。 -->
@@ -50,20 +53,27 @@
 
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
+import { useTheme } from './utils/theme'
 const route = useRoute()
+const { isDark, toggleTheme } = useTheme()
 </script>
 
 <style scoped>
 .app-layout { display: flex; height: 100vh; }
 .app-aside {
-  background: #fff; border-right: 1px solid #e4e7ed; display: flex; flex-direction: column;
+  background: var(--rs-bg-card); border-right: 1px solid var(--rs-border); display: flex; flex-direction: column;
   width: 64px; overflow: visible;
 }
 .app-logo {
   display: flex; align-items: center; justify-content: center; padding: 16px 0;
-  color: #409eff; border-bottom: 1px solid #f0f0f0; cursor: default;
+  color: #409eff; border-bottom: 1px solid var(--rs-border-light); cursor: default;
 }
 .app-menu { border-right: none; flex: 1; }
 .app-menu:not(.el-menu--collapse) { width: 64px; }
-.app-main { padding: 12px; overflow: auto; background: #f5f7fa; flex: 1; min-width: 0; }
+.app-main { padding: 12px; overflow: auto; background: var(--rs-bg-page); flex: 1; min-width: 0; }
+.theme-toggle {
+  display: flex; align-items: center; justify-content: center; padding: 14px 0;
+  color: var(--rs-text-3); border-top: 1px solid var(--rs-border-light); cursor: pointer;
+}
+.theme-toggle:hover { color: #409eff; }
 </style>

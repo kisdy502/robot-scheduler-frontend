@@ -89,7 +89,7 @@
       </el-table-column>
       <el-table-column label="说明" min-width="200">
         <template #default="{ row }">
-          <span :style="{ color: row.status === 'failed' ? '#f56c6c' : '#606266', fontSize: '12px' }">{{ row.message ?? '' }}</span>
+          <span :style="{ color: row.status === 'failed' ? '#f56c6c' : 'var(--rs-text-2)', fontSize: '12px' }">{{ row.message ?? '' }}</span>
         </template>
       </el-table-column>
       <el-table-column label="规划路线" min-width="220" show-overflow-tooltip>
@@ -102,7 +102,7 @@
       </el-table-column>
       <el-table-column label="更新时间" width="150" prop="updated_at" sortable>
         <template #default="{ row }">
-          <span style="color:#909399;font-size:11px">{{ fmtTime(row.updated_at) }}</span>
+          <span style="color:var(--rs-text-3);font-size:11px">{{ fmtTime(row.updated_at) }}</span>
         </template>
       </el-table-column>
     </el-table>
@@ -115,7 +115,7 @@
       <div class="report-meta" v-if="reportDlg.row">
         <span>{{ reportDlg.row.business_task_id }}</span>
         <el-tag size="small" :type="reportDlg.result === 'NG' ? 'danger' : 'success'">{{ reportDlg.result }}</el-tag>
-        <span style="color:#909399">{{ reportDlg.row.robot_code }}</span>
+        <span style="color:var(--rs-text-3)">{{ reportDlg.row.robot_code }}</span>
       </div>
       <pre class="report-json">{{ reportDlg.json }}</pre>
     </el-dialog>
@@ -125,7 +125,7 @@
       <div class="report-meta" v-if="requestDlg.row">
         <span>{{ requestDlg.row.business_task_id }}</span>
         <el-tag size="small" type="primary">{{ zhCategory(requestDlg.row.category) }}</el-tag>
-        <span style="color:#909399">{{ fmtTime(requestDlg.row.updated_at) }}</span>
+        <span style="color:var(--rs-text-3)">{{ fmtTime(requestDlg.row.updated_at) }}</span>
       </div>
       <pre class="report-json">{{ requestDlg.json }}</pre>
     </el-dialog>
@@ -329,12 +329,12 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 
 /* 任务 ID 双行：业务任务（主）/ 内核任务（次） */
 .id-cell { display: flex; flex-direction: column; gap: 1px; line-height: 1.4; }
-.id-biz { font-size: 12px; color: #303133; font-weight: 500; }
-.id-kernel { font-size: 11px; color: #909399; }
+.id-biz { font-size: 12px; color: var(--rs-text-1); font-weight: 500; }
+.id-kernel { font-size: 11px; color: var(--rs-text-3); }
 
 .robot-cell { display: flex; flex-direction: column; gap: 1px; line-height: 1.4; }
-.robot-name { font-size: 12px; color: #303133; font-weight: 500; }
-.robot-code { font-size: 11px; color: #909399; }
+.robot-name { font-size: 12px; color: var(--rs-text-1); font-weight: 500; }
+.robot-code { font-size: 11px; color: var(--rs-text-3); }
 
 .status-cell { display: flex; align-items: center; gap: 4px; }
 .cancel-btn { padding: 0 2px; font-size: 12px; }
@@ -342,7 +342,7 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 /* 业务流徽标：🔒 占用 → 移动 → 动作 → 🔓 释放 */
 .flow-badges { display: flex; align-items: center; gap: 4px; font-size: 12px; }
 .flow-badge { font-size: 13px; }
-.flow-arrow { color: #c0c4cc; font-size: 11px; }
+.flow-arrow { color: var(--rs-text-4); font-size: 11px; }
 .b-on { opacity: 1; }
 .b-off { opacity: 0.25; filter: grayscale(1); }
 .b-wait { opacity: 0.4; }
@@ -353,18 +353,18 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .flow-timeline { display: flex; flex-direction: column; gap: 4px; padding: 4px 12px; }
 .flow-node { display: flex; align-items: baseline; gap: 10px; font-size: 12px; line-height: 1.6; }
 .node-icon { width: 18px; text-align: center; }
-.node-title { min-width: 150px; color: #303133; font-weight: 500; }
-.node-time { color: #909399; font-family: Consolas, monospace; font-size: 11px; }
-.node-detail { color: #909399; }
-.st-ok .node-title { color: #303133; }
+.node-title { min-width: 150px; color: var(--rs-text-1); font-weight: 500; }
+.node-time { color: var(--rs-text-3); font-family: Consolas, monospace; font-size: 11px; }
+.node-detail { color: var(--rs-text-3); }
+.st-ok .node-title { color: var(--rs-text-1); }
 .st-fail .node-title { color: #f56c6c; }
 .st-run .node-title { color: #409eff; }
-.st-none .node-title, .st-none .node-icon { color: #c0c4cc; }
+.st-none .node-title, .st-none .node-icon { color: var(--rs-text-4); }
 .st-wait .node-title { color: #e6a23c; }
 
-.report-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 13px; color: #303133; }
+.report-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 13px; color: var(--rs-text-1); }
 .report-json {
-  background: #f5f7fa; border-radius: 4px; padding: 12px; margin: 0;
+  background: var(--rs-bg-soft); border-radius: 4px; padding: 12px; margin: 0;
   max-height: 60vh; overflow: auto; font-size: 12px; line-height: 1.6; white-space: pre-wrap;
 }
 </style>

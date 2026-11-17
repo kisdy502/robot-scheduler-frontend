@@ -76,7 +76,10 @@ const LANE_W = 0.05
 const LANE_H = 0.02
 const ROBOT_L = 0.42
 const ROBOT_W = 0.32
-const GLYPH_COLOR = 0x52667a
+/** 点位朝向/类型符号色（随主题切换：浅色深灰蓝 / 暗色浅灰蓝） */
+let glyphColorHex = 0x52667a
+const GLYPH_COLOR_LIGHT = 0x52667a
+const GLYPH_COLOR_DARK = 0x9db0c3
 
 /** 机器人专属色板（图标/路线/终点环同色；按首次出现顺序分配，16 台内保证不撞色） */
 const ROBOT_PALETTE = [0x409eff, 0x67c23a, 0xe6a23c, 0xf56c6c, 0x9b59b6,
@@ -227,6 +230,37 @@ export class MapCanvas {
     this.resizeObs = new ResizeObserver(() => this.resize())
     this.resizeObs.observe(container)
     this.setPreset('tilt')
+  }
+
+  /** 主题切换：场景底色/栅格/点位符号重着色（CSS2D 标签走 --rs-* 变量自动切换） */
+  setTheme(dark: boolean) {
+    this.scene.background = new THREE.Color(dark ? 0x10141a : 0xf5f7fa)
+    glyphColorHex = dark ? GLYPH_COLOR_DARK : GLYPH_COLOR_LIGHT
+    // 重建栅格（GridHelper 颜色烘焙在材质里，直接换新）
+    for (const child of [...this.gridGroup.children]) {
+      this.gridGroup.remove(child)
+      const m = child as THREE.GridHelper
+      m.geometry?.dispose()
+      const mat = m.material as THREE.Material | THREE.Material[] | undefined
+      if (Array.isArray(mat)) mat.forEach(x => x.dispose())
+      else mat?.dispose()
+    }
+    const grid = new THREE.GridHelper(80, 80, dark ? 0x3a3f47 : 0xd0d5dd, dark ? 0x262a30 : 0xe8ebf0)
+    grid.rotation.x = Math.PI / 2
+    ;(grid.material as THREE.Material).transparent = true
+    ;(grid.material as THREE.Material).opacity = 0.1
+    this.gridGroup.add(grid)
+    // 已有点位的朝向扇形/类型符号重着色（按旧主题色识别，避免误伤 puck 主体色）
+    this.pointsGroup.traverse(obj => {
+      const mesh = obj as THREE.Mesh
+      const mat = mesh.material as THREE.MeshBasicMaterial | undefined
+      if (mat?.color) {
+        const hex = mat.color.getHex()
+        if (hex === GLYPH_COLOR_LIGHT || hex === GLYPH_COLOR_DARK) {
+          mat.color.setHex(glyphColorHex)
+        }
+      }
+    })
     this.invalidate()
   }
 
@@ -524,7 +558,7 @@ export class MapCanvas {
       arrowShape.closePath()
       const arrow = new THREE.Mesh(
         new THREE.ShapeGeometry(arrowShape),
-        new THREE.MeshBasicMaterial({ color: GLYPH_COLOR, side: THREE.DoubleSide }),
+        new THREE.MeshBasicMaterial({ color: glyphColorHex, side: THREE.DoubleSide }),
       )
       arrow.position.z = POINT_H + 0.012
       const arrowGroup = new THREE.Group()
@@ -546,7 +580,7 @@ export class MapCanvas {
         shape.closePath()
         const symbol = new THREE.Mesh(
           new THREE.ShapeGeometry(shape),
-          new THREE.MeshBasicMaterial({ color: GLYPH_COLOR, side: THREE.DoubleSide }),
+          new THREE.MeshBasicMaterial({ color: glyphColorHex, side: THREE.DoubleSide }),
         )
         symbol.position.z = POINT_H + 0.01
         g.add(symbol)

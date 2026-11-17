@@ -1,16 +1,52 @@
 html, body, #app { height: 100%; margin: 0; }
 body {
   font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  color: #303133; background: #f5f7fa; -webkit-font-smoothing: antialiased;
+  color: var(--rs-text-1); background: var(--rs-bg-page); -webkit-font-smoothing: antialiased;
 }
 * { box-sizing: border-box; }
+
+/* ==================== 主题令牌（浅色） ==================== */
+:root {
+  --rs-text-1: #303133;          /* 主文本 */
+  --rs-text-2: #606266;          /* 常规文本 */
+  --rs-text-3: #909399;          /* 次要文本 */
+  --rs-text-4: #c0c4cc;          /* 占位/弱化 */
+  --rs-bg-page: #f5f7fa;         /* 页面底 */
+  --rs-bg-card: #ffffff;         /* 卡片/浮层 */
+  --rs-bg-soft: #f5f7fa;         /* 内嵌面板（代码块/摘要底） */
+  --rs-border: #e4e7ed;          /* 常规边框 */
+  --rs-border-light: #ebeef5;    /* 浅分隔线 */
+  --rs-tag-bg: #f4f4f5;          /* 中性标签底 */
+  --rs-hover-bg: #ecf5ff;        /* 列表悬停底 */
+  --rs-panel-bg: rgba(255,255,255,0.92);  /* 地图浮层面板底 */
+  --rs-label-bg: rgba(255,255,255,0.9);   /* 3D 点位标签底 */
+  --rs-label-border: #cdd0d8;
+}
+
+/* ==================== 主题令牌（暗色，对齐 Element Plus dark 变量） ==================== */
+html.dark {
+  --rs-text-1: #e5eaf3;
+  --rs-text-2: #cfd3dc;
+  --rs-text-3: #a3a6ad;
+  --rs-text-4: #8d9095;
+  --rs-bg-page: #0a0c10;
+  --rs-bg-card: #141414;
+  --rs-bg-soft: #1d1f23;
+  --rs-border: #3a3c40;
+  --rs-border-light: #2e3034;
+  --rs-tag-bg: #26272b;
+  --rs-hover-bg: rgba(64,158,255,0.12);
+  --rs-panel-bg: rgba(20,23,28,0.92);
+  --rs-label-bg: rgba(20,23,28,0.92);
+  --rs-label-border: #3d4148;
+}
 
 /* Three.js CSS2D 标签 */
 .nd-label { pointer-events: none; user-select: none; }
 .nd-label-inner {
   display: inline-block; transform: translateY(-18px); font-size: 11px; line-height: 16px;
-  padding: 0 5px; background: rgba(255,255,255,0.9); border: 1px solid #cdd0d8;
-  border-radius: 3px; color: #303133; white-space: nowrap;
+  padding: 0 5px; background: var(--rs-label-bg); border: 1px solid var(--rs-label-border);
+  border-radius: 3px; color: var(--rs-text-1); white-space: nowrap;
 }
     .nd-label-inner--robot {
       background: rgba(38,42,50,0.78); border-color: #4a5060; color: #fff;
@@ -43,9 +79,6 @@ body {
     .nd-batt i.on.o { background: #f5c26b; }
     .nd-batt i.on.g { background: #85e26d; }
     .nd-label-inner--robot.is-offline { opacity: 0.55; }
-
-
-
 
 /* 地图画布光标 */
 .map-canvas-el { cursor: grab; }

@@ -164,11 +164,11 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .events-header { display: flex; align-items: center; justify-content: space-between; }
 .events-filters { display: flex; gap: 8px; }
 .time-cell { display: flex; flex-direction: column; }
-.time-agg { font-size: 11px; color: #909399; }
-.change-cell { font-size: 12px; color: #606266; }
-.change-arrow { margin: 0 4px; color: #c0c4cc; }
+.time-agg { font-size: 11px; color: var(--rs-text-3); }
+.change-cell { font-size: 12px; color: var(--rs-text-2); }
+.change-arrow { margin: 0 4px; color: var(--rs-text-4); }
 .events-pager { display: flex; justify-content: flex-end; margin-top: 10px; }
 .robot-two-line { display: flex; flex-direction: column; gap: 1px; line-height: 1.4; }
-.robot-two-line .robot-name { font-size: 12px; color: #303133; font-weight: 500; }
-.robot-two-line .robot-code { font-size: 11px; color: #909399; }
+.robot-two-line .robot-name { font-size: 12px; color: var(--rs-text-1); font-weight: 500; }
+.robot-two-line .robot-code { font-size: 11px; color: var(--rs-text-3); }
 </style>

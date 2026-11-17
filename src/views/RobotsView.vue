@@ -49,7 +49,7 @@
             <el-button v-if="ownStale(row) && !row.current_task_id" link type="danger" size="small"
                        @click="openForceRelease(row)">强释</el-button>
           </div>
-          <span v-else style="color:#c0c4cc;font-size:11px">—</span>
+          <span v-else style="color:var(--rs-text-4);font-size:11px">—</span>
         </template>
       </el-table-column>
       <el-table-column label="电量" width="120">
@@ -60,14 +60,14 @@
       </el-table-column>
       <el-table-column label="位置" width="160">
         <template #default="{ row }">
-          <span style="font-size:12px;color:#6062666">({{ fmt(row.pose?.x) }}, {{ fmt(row.pose?.y) }})</span>
+          <span style="font-size:12px;color:var(--rs-text-2)">({{ fmt(row.pose?.x) }}, {{ fmt(row.pose?.y) }})</span>
         </template>
       </el-table-column>
       <el-table-column label="楼层" prop="rmf_level" width="70" />
       <el-table-column label="车队" prop="fleet_name" width="150" show-overflow-tooltip />
       <el-table-column label="当前任务" prop="rmf_task_id" min-width="180" show-overflow-tooltip>
         <template #default="{ row }">
-          <span style="color:#909399;font-size:11px">{{ row.rmf_task_id ?? '--' }}</span>
+          <span style="color:var(--rs-text-3);font-size:11px">{{ row.rmf_task_id ?? '--' }}</span>
         </template>
       </el-table-column>
       <el-table-column label="任务状态" prop="task_status" width="90">
@@ -76,7 +76,7 @@
       <el-table-column label="家点" prop="home_point" width="80" />
       <el-table-column label="更新" width="160">
         <template #default="{ row }">
-          <span style="color:#909399;font-size:11px">{{ fmtTime(row.updated_at) }}</span>
+          <span style="color:var(--rs-text-3);font-size:11px">{{ fmtTime(row.updated_at) }}</span>
         </template>
       </el-table-column>
     </el-table>
@@ -128,7 +128,7 @@ const modeType = (m: string) => modeTypeMap[m] ?? 'info'
 const fmt = (v: number | undefined | null) => (v != null ? Number(v).toFixed(1) : '--')
 const fmtTime = (ts: number) => ts ? new Date(ts).toLocaleString('zh-CN', { hour12: false }) : ''
 const batteryColor = (b: number | null) => {
-  if (b == null) return '#909399'
+  if (b == null) return 'var(--rs-text-3)'
   if (b < 20) return '#f56c6c'
   if (b < 40) return '#e6a23c'
   return '#67c23a'
@@ -202,10 +202,10 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 
 <style scoped>
 .robot-two-line { display: flex; flex-direction: column; gap: 1px; line-height: 1.4; }
-.robot-two-line .robot-name { font-size: 12px; color: #303133; font-weight: 600; }
-.robot-two-line .robot-code { font-size: 11px; color: #909399; }
+.robot-two-line .robot-name { font-size: 12px; color: var(--rs-text-1); font-weight: 600; }
+.robot-two-line .robot-code { font-size: 11px; color: var(--rs-text-3); }
 .own-cell { display: flex; align-items: center; gap: 6px; }
-.own-tag { font-size: 11px; color: #606266; background: #f4f4f5; border-radius: 3px; padding: 1px 6px; white-space: nowrap; }
-.own-tag.own-stale { color: #e6a23c; background: #fdf6ec; }
-.force-tip { font-size: 12px; color: #606266; line-height: 1.6; margin-bottom: 10px; }
+.own-tag { font-size: 11px; color: var(--rs-text-2); background: var(--rs-tag-bg); border-radius: 3px; padding: 1px 6px; white-space: nowrap; }
+.own-tag.own-stale { color: #e6a23c; background: rgba(230,162,60,0.14); }
+.force-tip { font-size: 12px; color: var(--rs-text-2); line-height: 1.6; margin-bottom: 10px; }
 </style>

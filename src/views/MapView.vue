@@ -99,12 +99,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { MapCanvas } from '@/three/MapCanvas'
 import type { PickedPoint } from '@/three/MapCanvas'
 import { schedulerApi } from '@/api/scheduler'
 import { rememberRobotNames } from '@/utils/robotNames'
+import { useTheme } from '@/utils/theme'
 import type { Waypoint, PathInfo, Zone, RobotInfo, ActiveRoute } from '@/types'
 
 const canvasRef = ref<HTMLElement>()
@@ -130,6 +131,8 @@ const busyCount = computed(() => robots.value.filter(r => r.mode === 'running' |
 
 // 右键菜单状态
 const ctxMenu = reactive({ visible: false, x: 0, y: 0, point: null as PickedPoint | null })
+
+const { isDark } = useTheme()
 
 function setPreset(p: 'top' | 'tilt' | 'side') { preset.value = p; canvas?.setPreset(p) }
 function fitView() { canvas?.fitView() }
@@ -323,6 +326,8 @@ function robotShortName(code: string) {
 onMounted(() => {
   if (canvasRef.value) {
     canvas = new MapCanvas(canvasRef.value)
+    canvas.setTheme(isDark.value)
+    watch(isDark, v => canvas?.setTheme(v))
     stopped = false
     canvas.onPresetChange = (p) => { preset.value = p }
     canvas.onPointContextMenu = showCtxMenu
@@ -348,39 +353,39 @@ onUnmounted(() => {
 
 <style scoped>
 .map-view { position: relative; height: calc(100vh - 24px); }
-.active-routes { position: absolute; bottom: 12px; left: 12px; max-width: 480px; max-height: 28vh; overflow: auto; padding: 8px; border-radius: 6px; background: rgba(255,255,255,.92); font-size: 12px; }
-.active-route { display: block; width: 100%; padding: 6px 0; border: 0; border-top: 1px solid #ebeef5; background: transparent; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
-.map-canvas { width: 100%; height: 100%; overflow: hidden; border-radius: 6px; background: #f5f7fa; }
+.active-routes { position: absolute; bottom: 12px; left: 12px; max-width: 480px; max-height: 28vh; overflow: auto; padding: 8px; border-radius: 6px; background: var(--rs-panel-bg); font-size: 12px; }
+.active-route { display: block; width: 100%; padding: 6px 0; border: 0; border-top: 1px solid var(--rs-border-light); background: transparent; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.map-canvas { width: 100%; height: 100%; overflow: hidden; border-radius: 6px; background: var(--rs-bg-page); }
 .map-toolbar { position: absolute; top: 12px; left: 12px; z-index: 10; display: flex; align-items: center; }
-.route-toggle-label { font-size: 12px; color: #606266; margin-right: 6px; }
+.route-toggle-label { font-size: 12px; color: var(--rs-text-2); margin-right: 6px; }
 .map-overlay { position: absolute; top: 12px; right: 12px; z-index: 10; }
-.info-row { display: flex; justify-content: space-between; font-size: 12px; color: #606266; margin-bottom: 4px; }
-.info-row b { color: #303133; font-weight: 500; }
+.info-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--rs-text-2); margin-bottom: 4px; }
+.info-row b { color: var(--rs-text-1); font-weight: 500; }
 
 /* 右键菜单 */
 .ctx-menu {
   position: fixed; z-index: 9999; min-width: 160px;
-  background: #fff; border: 1px solid #e4e7ed; border-radius: 6px;
+  background: var(--rs-bg-card); border: 1px solid var(--rs-border); border-radius: 6px;
   box-shadow: 0 4px 16px rgba(0,0,0,0.12); padding: 4px 0;
 }
 .ctx-menu-header {
-  padding: 6px 14px; font-size: 12px; font-weight: 600; color: #909399;
-  border-bottom: 1px solid #f0f0f0; margin-bottom: 4px;
+  padding: 6px 14px; font-size: 12px; font-weight: 600; color: var(--rs-text-3);
+  border-bottom: 1px solid var(--rs-border-light); margin-bottom: 4px;
 }
 .ctx-menu-item {
-  padding: 7px 14px; font-size: 13px; color: #303133; cursor: pointer;
+  padding: 7px 14px; font-size: 13px; color: var(--rs-text-1); cursor: pointer;
   display: flex; align-items: center; gap: 6px;
 }
-.ctx-menu-item:hover { background: #ecf5ff; color: #409eff; }
+.ctx-menu-item:hover { background: var(--rs-hover-bg); color: #409eff; }
 
 /* 任务下发对话框 */
 .dlg-tip {
-  font-size: 12px; color: #909399; line-height: 1.6;
-  background: #f5f7fa; border-radius: 4px; padding: 8px 12px; margin-bottom: 12px;
+  font-size: 12px; color: var(--rs-text-3); line-height: 1.6;
+  background: var(--rs-bg-soft); border-radius: 4px; padding: 8px 12px; margin-bottom: 12px;
 }
 .dlg-radios { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 .dlg-radio { margin: 0; width: 100%; height: auto; padding: 8px 12px; }
 .dlg-radio :deep(.el-radio__label) { display: flex; flex-direction: column; gap: 2px; white-space: normal; }
-.robot-name { font-size: 13px; font-weight: 500; color: #303133; }
-.robot-meta { font-size: 11px; color: #909399; }
+.robot-name { font-size: 13px; font-weight: 500; color: var(--rs-text-1); }
+.robot-meta { font-size: 11px; color: var(--rs-text-3); }
 </style>

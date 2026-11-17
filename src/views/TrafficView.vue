@@ -4,7 +4,7 @@
       <el-col :span="10">
         <el-card shadow="never">
           <template #header>实时占用（{{ robotCount }} 台占用 / {{ refreshTime }}）</template>
-          <div v-if="robotCount === 0" style="color:#909399;padding:20px;text-align:center">当前无占用</div>
+          <div v-if="robotCount === 0" style="color:var(--rs-text-3);padding:20px;text-align:center">当前无占用</div>
           <div v-for="(info, robot) in occupation?.by_robot" :key="robot" class="occ-row">
             <div class="occ-robot">
               <b>{{ robotName(String(robot)) || String(robot).slice(-5) }}</b>
@@ -41,7 +41,7 @@
           <el-table :data="events" stripe size="small" max-height="calc(100vh - 260px)">
             <el-table-column label="时间" width="160">
               <template #default="{ row }">
-                <span style="color:#909399;font-size:11px">{{ row.created_at ? new Date(row.created_at).toLocaleString('zh-CN', { hour12: false }) : '' }}</span>
+                <span style="color:var(--rs-text-3);font-size:11px">{{ row.created_at ? new Date(row.created_at).toLocaleString('zh-CN', { hour12: false }) : '' }}</span>
               </template>
             </el-table-column>
             <el-table-column label="动作" width="100">
@@ -60,7 +60,7 @@
             </el-table-column>
             <el-table-column label="资源" min-width="200">
               <template #default="{ row }">
-                <span style="color:#909399;font-size:11px">{{ row.resource_id ?? '' }}</span>
+                <span style="color:var(--rs-text-3);font-size:11px">{{ row.resource_id ?? '' }}</span>
               </template>
             </el-table-column>
           </el-table>
@@ -130,14 +130,14 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 
 <style scoped>
 .traffic-view { display: flex; flex-direction: column; gap: 12px; }
-.occ-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid #f0f0f0; }
+.occ-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--rs-border-light); }
 .occ-row:last-child { border-bottom: none; }
 .occ-robot { display: flex; align-items: center; gap: 8px; }
-.occ-robot b { font-size: 13px; color: #303133; }
-.occ-code { font-size: 11px; color: #909399; }
+.occ-robot b { font-size: 13px; color: var(--rs-text-1); }
+.occ-code { font-size: 11px; color: var(--rs-text-3); }
 .occ-resources { display: flex; flex-wrap: wrap; gap: 4px; }
 .audit-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .robot-two-line { display: flex; flex-direction: column; gap: 1px; line-height: 1.4; }
-.robot-two-line .robot-name { font-size: 12px; color: #303133; font-weight: 500; }
-.robot-two-line .robot-code { font-size: 11px; color: #909399; }
+.robot-two-line .robot-name { font-size: 12px; color: var(--rs-text-1); font-weight: 500; }
+.robot-two-line .robot-code { font-size: 11px; color: var(--rs-text-3); }
 </style>

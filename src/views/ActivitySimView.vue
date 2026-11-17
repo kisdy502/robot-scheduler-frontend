@@ -376,10 +376,10 @@ function abort() {
 .sim-view { display: flex; flex-direction: column; gap: 12px; height: 100%; }
 .cfg-card :deep(.el-card__header) { padding: 10px 16px; }
 .card-head { display: flex; align-items: baseline; gap: 12px; }
-.head-sub { font-size: 11px; color: #909399; font-weight: normal; }
+.head-sub { font-size: 11px; color: var(--rs-text-3); font-weight: normal; }
 .cfg-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
 .cfg-item { display: flex; align-items: center; gap: 8px; }
-.cfg-label { font-size: 13px; color: #606266; white-space: nowrap; }
+.cfg-label { font-size: 13px; color: var(--rs-text-2); white-space: nowrap; }
 .cfg-actions { margin-left: auto; display: flex; gap: 8px; }
 .steps-card :deep(.el-card__body) { padding: 16px 8px; }
 .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; flex: 1; min-height: 0; }
@@ -387,15 +387,15 @@ function abort() {
 .log-head { display: flex; justify-content: space-between; align-items: center; }
 .log-card :deep(.el-card__body), .result-card :deep(.el-card__body) { flex: 1; overflow: auto; }
 .log-box { font-size: 12px; line-height: 1.7; }
-.log-empty { color: #c0c4cc; text-align: center; padding: 32px 0; }
+.log-empty { color: var(--rs-text-4); text-align: center; padding: 32px 0; }
 .log-line { display: flex; gap: 8px; }
-.log-time { color: #c0c4cc; font-family: Consolas, monospace; flex-shrink: 0; }
+.log-time { color: var(--rs-text-4); font-family: Consolas, monospace; flex-shrink: 0; }
 .log-tag { color: #409eff; flex-shrink: 0; width: 34px; }
-.log-text { color: #303133; word-break: break-all; }
+.log-text { color: var(--rs-text-1); word-break: break-all; }
 .lv-error .log-text { color: #f56c6c; }
 .lv-warn .log-text { color: #e6a23c; }
 .result-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
-.result-meta { font-size: 12px; color: #909399; }
+.result-meta { font-size: 12px; color: var(--rs-text-3); }
 .raw-collapse { margin-top: 10px; }
-.raw-json { font-size: 11px; background: #f5f7fa; border-radius: 4px; padding: 8px; max-height: 240px; overflow: auto; }
+.raw-json { font-size: 11px; background: var(--rs-bg-soft); border-radius: 4px; padding: 8px; max-height: 240px; overflow: auto; }
 </style>
