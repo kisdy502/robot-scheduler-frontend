@@ -960,6 +960,16 @@ export class MapCanvas {
     chevron.position.set(ROBOT_L * 0.1, 0, 0.11)
     body.add(chevron)
 
+    // 不可见拾取体（放大悬停/点击命中范围：本体缩小后 0.28x0.21 很难点中，
+    // 徽标下方及周边区域都算机器人——射线照常命中，渲染彻底跳过）
+    const hitProxy = new THREE.Mesh(
+      new THREE.BoxGeometry(0.8, 0.8, 0.7),
+      new THREE.MeshBasicMaterial(),
+    )
+    hitProxy.material.visible = false
+    hitProxy.position.set(0, 0.1, 0.3)
+    body.add(hitProxy)
+
     root.add(body)
 
     const el = document.createElement('div')
