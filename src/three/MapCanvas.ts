@@ -15,18 +15,18 @@ import type { Waypoint, PathInfo, Zone, RobotInfo, ActiveRoute } from '@/types'
 
 // ==================== 机器人徽标（紧凑单行：图标 + 名字 + 5 格电池） ====================
 
-/** 状态图标映射：空闲 ○ / 移动 ➤ / 作业 ⚙ / 充电 ⚡ / 等待 … / 暂停 ‖ / 错误 ✕ / 离线 ⊘ */
-function modeIcon(mode: string): { glyph: string; color: string } {
+/** 状态图标映射：空闲 ○ / 移动 ➤ / 作业 ⚙ / 充电 ⚡ / 等待 … / 暂停 ‖ / 错误 ✕ / 离线 ⊘（label 供悬停说明） */
+function modeIcon(mode: string): { glyph: string; color: string; label: string } {
   switch (mode) {
-    case 'running': return { glyph: '➤', color: '#79bbff' }
-    case 'charging': return { glyph: '⚡', color: '#95d475' }
-    case 'working': return { glyph: '⚙', color: '#c8a6ff' }
-    case 'waiting': return { glyph: '…', color: '#eebe77' }
-    case 'paused': return { glyph: '‖', color: '#eebe77' }
-    case 'error': return { glyph: '✕', color: '#fab6b6' }
-    case 'offline': return { glyph: '⊘', color: '#a8abb2' }
+    case 'running': return { glyph: '➤', color: '#79bbff', label: '移动中（正在执行导航任务）' }
+    case 'charging': return { glyph: '⚡', color: '#95d475', label: '充电中' }
+    case 'working': return { glyph: '⚙', color: '#c8a6ff', label: '作业中（执行业务动作）' }
+    case 'waiting': return { glyph: '…', color: '#eebe77', label: '等待中（交通/资源等待）' }
+    case 'paused': return { glyph: '‖', color: '#eebe77', label: '已暂停' }
+    case 'error': return { glyph: '✕', color: '#fab6b6', label: '异常（底盘报错）' }
+    case 'offline': return { glyph: '⊘', color: '#a8abb2', label: '离线' }
     case 'idle':
-    default: return { glyph: '○', color: '#a8abb2' }
+    default: return { glyph: '○', color: '#a8abb2', label: '空闲' }
   }
 }
 
@@ -201,6 +201,11 @@ export class MapCanvas {
     this.labelRenderer.domElement.style.pointerEvents = 'none'
     container.appendChild(this.labelRenderer.domElement)
 
+    // 机器人悬停说明卡（图标含义/占用/电量；pointer-events:none 不拦截画布拖拽）
+    this.hoverTip = document.createElement('div')
+    this.hoverTip.className = 'map-hover-tip'
+    this.container.appendChild(this.hoverTip)
+
     this.controls = new OrbitControls(this.camera, this.renderer.domElement)
     this.controls.enableDamping = true
     this.controls.dampingFactor = 0.15
@@ -227,9 +232,11 @@ export class MapCanvas {
     this.gridGroup.add(grid)
 
     // 右键菜单 + 机器人点击选中（按下/抬起位移小于阈值判定为点击，避免拖拽旋转误触）
+    // + 机器人悬停说明卡
     this.renderer.domElement.addEventListener('contextmenu', this.onContextMenu)
     this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown)
     this.renderer.domElement.addEventListener('pointerup', this.onPointerUp)
+    this.renderer.domElement.addEventListener('pointermove', this.onPointerMoveHover)
 
     this.resizeObs = new ResizeObserver(() => this.resize())
     this.resizeObs.observe(container)
@@ -310,6 +317,7 @@ export class MapCanvas {
   private pointerDownAt: { x: number; y: number } | null = null
   private selectedPointId: string | null = null
   private selectionRing: THREE.Mesh | null = null
+  private hoverTip: HTMLDivElement | null = null
 
   /** 点位选中高亮：橙色线圈套在选中点圆盘外缘（传 null 取消选中；地图重建后自动恢复） */
   setSelectedPoint(id: string | null) {
@@ -380,6 +388,48 @@ export class MapCanvas {
       }
     }
     this.setSelectedPoint(null)
+  }
+
+  // ==================== 机器人悬停说明 ====================
+
+  /** 悬停机器人 3D 本体：浮出图标含义/占用/电量说明卡（跟随鼠标，边缘自动翻转） */
+  private onPointerMoveHover = (e: PointerEvent) => {
+    if (!this.hoverTip) return
+    const rect = this.renderer.domElement.getBoundingClientRect()
+    this.mouseNDC.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
+    this.mouseNDC.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
+    this.raycaster.setFromCamera(this.mouseNDC, this.camera)
+    const hits = this.raycaster.intersectObjects(this.robotsGroup.children, true)
+    let code: string | null = null
+    if (hits.length > 0) {
+      let obj: THREE.Object3D | null = hits[0].object
+      while (obj && !obj.userData?.robotCode) obj = obj.parent
+      code = (obj?.userData?.robotCode as string) ?? null
+    }
+    const mesh = code ? this.robots.get(code) : null
+    if (!mesh) {
+      this.hoverTip.style.display = 'none'
+      return
+    }
+    const m = mesh.meta
+    const icon = modeIcon(m.mode)
+    const rows = [
+      `<b>${escapeHtml(m.name)}</b><span class="tip-code">${escapeHtml(mesh.code)}</span>`,
+      `<span class="tip-row">${icon.glyph} ${icon.label}${m.online ? '' : '（离线）'}</span>`,
+    ]
+    if (m.anomalous) rows.push('<span class="tip-row warn">⚠ 不可派发：离图/异常模式/地图不一致</span>')
+    if (m.owned) rows.push('<span class="tip-row">🔒 使用权占用中（业务流程持有租约）</span>')
+    if (m.battery != null) rows.push(`<span class="tip-row">🔋 电量 ${Math.round(m.battery)}%</span>`)
+    rows.push('<span class="tip-row dim">点击可选中该机器人的路线</span>')
+    this.hoverTip.innerHTML = rows.join('')
+    this.hoverTip.style.display = 'block'
+    const cr = this.container.getBoundingClientRect()
+    let x = e.clientX - cr.left + 14
+    let y = e.clientY - cr.top + 12
+    if (x + this.hoverTip.offsetWidth > cr.width - 8) x = e.clientX - cr.left - this.hoverTip.offsetWidth - 10
+    if (y + this.hoverTip.offsetHeight > cr.height - 8) y = e.clientY - cr.top - this.hoverTip.offsetHeight - 8
+    this.hoverTip.style.left = `${x}px`
+    this.hoverTip.style.top = `${y}px`
   }
 
   // ==================== 视角 ====================
@@ -481,6 +531,9 @@ export class MapCanvas {
         const displayName = robotDisplayName(r.robot_code)
         // 在线但不可派发（离图/异常模式/地图不一致）→ ⚠ 前缀 + 橙底，前端一眼可见（否则 mode=idle 看起来正常）
         const anomalous = r.online_status === 'online' && !r.dispatchable
+        // 悬停提示数据（先于徽标去重 continue 刷新，保证提示始终最新）
+        mesh.meta = { name: displayName, mode: r.mode, battery: r.battery ?? null,
+          online: r.online_status === 'online', owned: r.owned_by_taskflow != null, anomalous }
         const badgeKey = JSON.stringify([displayName, r.mode, r.battery, anomalous, focused, r.online_status])
         if (badgeKey === mesh.badgeKey) continue
         mesh.badgeKey = badgeKey
@@ -919,7 +972,8 @@ export class MapCanvas {
     label.position.set(0, 0.4, 0.15)
     root.add(label)
 
-    return { root, body, label, code, shown: null, motion: null, badgeKey: '' }
+    return { root, body, label, code, shown: null, motion: null, badgeKey: '',
+      meta: { name: code, mode: 'idle', battery: null, online: false, owned: false, anomalous: false } }
   }
 
   // ==================== 相机 ====================
@@ -1012,6 +1066,9 @@ export class MapCanvas {
     this.renderer.domElement.removeEventListener('contextmenu', this.onContextMenu)
     this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDown)
     this.renderer.domElement.removeEventListener('pointerup', this.onPointerUp)
+    this.renderer.domElement.removeEventListener('pointermove', this.onPointerMoveHover)
+    this.hoverTip?.remove()
+    this.hoverTip = null
     this.resizeObs.disconnect()
     document.removeEventListener('visibilitychange', this.onVisibilityChange)
     this.controls.removeEventListener('change', this.invalidate)
@@ -1033,4 +1090,7 @@ interface RobotMesh {
   motion: { x: number; y: number; yaw: number; startedAt: number;
     target: { x: number; y: number; yaw: number } } | null
   badgeKey: string
+  /** 悬停提示数据（每次机器人帧更新，随徽标一起刷新） */
+  meta: { name: string; mode: string; battery: number | null; online: boolean;
+    owned: boolean; anomalous: boolean }
 }
