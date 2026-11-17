@@ -83,9 +83,9 @@ let puckColorHex = 0x95d475
 const GLYPH_COLOR_LIGHT = 0x52667a, GLYPH_COLOR_DARK = 0x2e3a48
 const PUCK_COLOR_LIGHT = 0x95d475, PUCK_COLOR_DARK = 0x67c23a
 const BG_LIGHT = 0xf5f7fa, BG_DARK = 0x0b0e13
-const LANE_LIGHT = { color: 0x606266, opacity: 0.4 }, LANE_DARK = { color: 0x8a97ad, opacity: 0.55 }
-const CURVE_LIGHT = { color: 0x7a8fb5, opacity: 0.5 }, CURVE_DARK = { color: 0x9db1d4, opacity: 0.6 }
-const ARROW_LIGHT = { color: 0x7ab7ff, opacity: 0.7 }, ARROW_DARK = { color: 0x8fc3ff, opacity: 0.85 }
+const LANE_LIGHT = { color: 0x606266, opacity: 0.4 }, LANE_DARK = { color: 0x4a5568, opacity: 0.45 }
+const CURVE_LIGHT = { color: 0x7a8fb5, opacity: 0.5 }, CURVE_DARK = { color: 0x5d729c, opacity: 0.5 }
+const ARROW_LIGHT = { color: 0x7ab7ff, opacity: 0.7 }, ARROW_DARK = { color: 0x4f9cf7, opacity: 0.9 }
 
 /** 机器人专属色板（图标/路线/终点环同色；按首次出现顺序分配，16 台内保证不撞色） */
 const ROBOT_PALETTE = [0x409eff, 0x67c23a, 0xe6a23c, 0xf56c6c, 0x9b59b6,
