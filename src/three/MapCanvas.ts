@@ -76,10 +76,16 @@ const LANE_W = 0.05
 const LANE_H = 0.02
 const ROBOT_L = 0.42
 const ROBOT_W = 0.32
-/** 点位朝向/类型符号色（随主题切换：浅色深灰蓝 / 暗色浅灰蓝） */
+/** 画布主题配色（浅色值与 2D 视图/testDispatch 对齐；暗色整体加深一档增强对比） */
+let darkTheme = false
 let glyphColorHex = 0x52667a
-const GLYPH_COLOR_LIGHT = 0x52667a
-const GLYPH_COLOR_DARK = 0x9db0c3
+let puckColorHex = 0x95d475
+const GLYPH_COLOR_LIGHT = 0x52667a, GLYPH_COLOR_DARK = 0x2e3a48
+const PUCK_COLOR_LIGHT = 0x95d475, PUCK_COLOR_DARK = 0x67c23a
+const BG_LIGHT = 0xf5f7fa, BG_DARK = 0x0b0e13
+const LANE_LIGHT = { color: 0x606266, opacity: 0.4 }, LANE_DARK = { color: 0x8a97ad, opacity: 0.55 }
+const CURVE_LIGHT = { color: 0x7a8fb5, opacity: 0.5 }, CURVE_DARK = { color: 0x9db1d4, opacity: 0.6 }
+const ARROW_LIGHT = { color: 0x7ab7ff, opacity: 0.7 }, ARROW_DARK = { color: 0x8fc3ff, opacity: 0.85 }
 
 /** 机器人专属色板（图标/路线/终点环同色；按首次出现顺序分配，16 台内保证不撞色） */
 const ROBOT_PALETTE = [0x409eff, 0x67c23a, 0xe6a23c, 0xf56c6c, 0x9b59b6,
@@ -232,10 +238,12 @@ export class MapCanvas {
     this.setPreset('tilt')
   }
 
-  /** 主题切换：场景底色/栅格/点位符号重着色（CSS2D 标签走 --rs-* 变量自动切换） */
+  /** 主题切换：底色/栅格/点位圆盘/朝向符号/车道/方向箭头重着色（CSS2D 标签走 --rs-* 变量自动切换） */
   setTheme(dark: boolean) {
-    this.scene.background = new THREE.Color(dark ? 0x10141a : 0xf5f7fa)
+    darkTheme = dark
     glyphColorHex = dark ? GLYPH_COLOR_DARK : GLYPH_COLOR_LIGHT
+    puckColorHex = dark ? PUCK_COLOR_DARK : PUCK_COLOR_LIGHT
+    this.scene.background = new THREE.Color(dark ? BG_DARK : BG_LIGHT)
     // 重建栅格（GridHelper 颜色烘焙在材质里，直接换新）
     for (const child of [...this.gridGroup.children]) {
       this.gridGroup.remove(child)
@@ -250,15 +258,26 @@ export class MapCanvas {
     ;(grid.material as THREE.Material).transparent = true
     ;(grid.material as THREE.Material).opacity = 0.1
     this.gridGroup.add(grid)
-    // 已有点位的朝向扇形/类型符号重着色（按旧主题色识别，避免误伤 puck 主体色）
+    // 已有点位：朝向扇形/类型符号 + 圆盘重着色（按两套主题已知色识别，不误伤 puck 主体色以外的材质）
     this.pointsGroup.traverse(obj => {
-      const mesh = obj as THREE.Mesh
-      const mat = mesh.material as THREE.MeshBasicMaterial | undefined
-      if (mat?.color) {
-        const hex = mat.color.getHex()
-        if (hex === GLYPH_COLOR_LIGHT || hex === GLYPH_COLOR_DARK) {
-          mat.color.setHex(glyphColorHex)
-        }
+      const mat = ((obj as THREE.Mesh).material ?? null) as { color?: THREE.Color } | null
+      const hex = mat?.color ? mat.color.getHex() : -1
+      if (hex === GLYPH_COLOR_LIGHT || hex === GLYPH_COLOR_DARK) mat!.color!.setHex(glyphColorHex)
+      else if (hex === PUCK_COLOR_LIGHT || hex === PUCK_COLOR_DARK) mat!.color!.setHex(puckColorHex)
+    })
+    // 车道条带/曲段/方向箭头：颜色 + 不透明度整体加深（材质共享，重复 set 无害）
+    const lane = dark ? LANE_DARK : LANE_LIGHT
+    const curve = dark ? CURVE_DARK : CURVE_LIGHT
+    const arrow = dark ? ARROW_DARK : ARROW_LIGHT
+    this.pathsGroup.traverse(obj => {
+      const mat = ((obj as THREE.Mesh).material ?? null) as { color?: THREE.Color; opacity?: number } | null
+      const hex = mat?.color ? mat.color.getHex() : -1
+      if (hex === LANE_LIGHT.color || hex === LANE_DARK.color) {
+        mat!.color!.setHex(lane.color); mat!.opacity = lane.opacity
+      } else if (hex === CURVE_LIGHT.color || hex === CURVE_DARK.color) {
+        mat!.color!.setHex(curve.color); mat!.opacity = curve.opacity
+      } else if (hex === ARROW_LIGHT.color || hex === ARROW_DARK.color) {
+        mat!.color!.setHex(arrow.color); mat!.opacity = arrow.opacity
       }
     })
     this.invalidate()
@@ -542,11 +561,11 @@ export class MapCanvas {
       hit.material.visible = false
       g.add(hit)
 
-      // 立体圆盘（短圆柱凸台）：MeshBasic 不受光，颜色与 2D 视图 #95d475 完全一致
-      // （Lambert 受光会把浅绿压成深绿，立体感由圆柱侧壁轮廓体现即可）
+      // 立体圆盘（短圆柱凸台）：MeshBasic 不受光，浅色主题颜色与 2D 视图 #95d475 完全一致
+      // （Lambert 受光会把浅绿压成深绿，立体感由圆柱侧壁轮廓体现即可）；暗色主题加深为标准绿
       const puck = new THREE.Mesh(
         new THREE.CylinderGeometry(POINT_R, POINT_R, POINT_H, 28),
-        new THREE.MeshBasicMaterial({ color: new THREE.Color(style.color) }),
+        new THREE.MeshBasicMaterial({ color: puckColorHex }),
       )
       puck.rotation.x = Math.PI / 2
       puck.position.z = POINT_H / 2
@@ -608,13 +627,22 @@ export class MapCanvas {
     this.clearGroup(this.pathsGroup)
     const scale = this.sceneScale
     const wpMap = new Map(waypoints.map(w => [w.id, w]))
-    // 车道立体条带材质（Lambert：侧壁受光差异产生立体感；细+浅+半透明，调度路线画在其上）
-    const laneMat = new THREE.MeshLambertMaterial({ color: 0x606266, transparent: true, opacity: 0.4 })
-    const curveLaneMat = new THREE.MeshLambertMaterial({ color: 0x7a8fb5, transparent: true, opacity: 0.5 })
+    // 车道立体条带材质（Lambert：侧壁受光差异产生立体感；细+浅+半透明，调度路线画在其上；
+    // 暗色主题整体加深：颜色提一档 + 不透明度上调，避免深底上灰蒙蒙看不清）
+    const laneMat = new THREE.MeshLambertMaterial({
+      color: darkTheme ? LANE_DARK.color : LANE_LIGHT.color,
+      transparent: true, opacity: darkTheme ? LANE_DARK.opacity : LANE_LIGHT.opacity,
+    })
+    const curveLaneMat = new THREE.MeshLambertMaterial({
+      color: darkTheme ? CURVE_DARK.color : CURVE_LIGHT.color,
+      transparent: true, opacity: darkTheme ? CURVE_DARK.opacity : CURVE_LIGHT.opacity,
+    })
     // 箭头：禁写深度 + 提高绘制次序——透明物体按相机距离排序，两枚箭头中心分居中点两侧，
     // 排序会一个落在车道前一个在后（先画的丢车道深度=全遮、后画的=半透），renderOrder 强制统一
     const arrowMat = new THREE.MeshBasicMaterial({
-      color: 0x7ab7ff, side: THREE.DoubleSide, transparent: true, opacity: 0.7, depthWrite: false,
+      color: darkTheme ? ARROW_DARK.color : ARROW_LIGHT.color,
+      side: THREE.DoubleSide, transparent: true,
+      opacity: darkTheme ? ARROW_DARK.opacity : ARROW_LIGHT.opacity, depthWrite: false,
     })
 
     for (const path of paths) {
