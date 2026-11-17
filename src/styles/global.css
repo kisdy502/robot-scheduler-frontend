@@ -80,6 +80,4 @@ html.dark {
     .nd-batt i.on.g { background: #85e26d; }
     .nd-label-inner--robot.is-offline { opacity: 0.55; }
 
-/* 地图画布光标 */
-.map-canvas-el { cursor: grab; }
-.map-canvas-el:active { cursor: grabbing; }
+/* 地图画布光标：默认箭头（拖拽/旋转不换手势） */

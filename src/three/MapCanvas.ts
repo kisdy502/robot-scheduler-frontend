@@ -310,6 +310,39 @@ export class MapCanvas {
   // ==================== 机器人点击选中 ====================
 
   private pointerDownAt: { x: number; y: number } | null = null
+  private selectedPointId: string | null = null
+  private selectionRing: THREE.Mesh | null = null
+
+  /** 点位选中高亮：橙色线圈套在选中点圆盘外缘（传 null 取消选中；地图重建后自动恢复） */
+  setSelectedPoint(id: string | null) {
+    if (this.selectedPointId === id) return
+    this.selectedPointId = id
+    this.refreshSelectionRing()
+    this.invalidate()
+  }
+
+  private refreshSelectionRing() {
+    if (this.selectionRing) {
+      this.selectionRing.removeFromParent()
+      this.selectionRing.geometry.dispose()
+      ;(this.selectionRing.material as THREE.Material).dispose()
+      this.selectionRing = null
+    }
+    if (!this.selectedPointId) return
+    const group = this.pointGroups.get(this.selectedPointId)
+    if (!group) return
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(POINT_R * 1.25, POINT_R * 1.55, 36),
+      new THREE.MeshBasicMaterial({
+        color: 0xff9c3f, transparent: true, opacity: 0.95,
+        side: THREE.DoubleSide, depthWrite: false,
+      }),
+    )
+    ring.position.z = POINT_H + 0.02
+    ring.renderOrder = 5
+    group.add(ring)
+    this.selectionRing = ring
+  }
 
   private onPointerDown = (e: PointerEvent) => {
     this.pointerDownAt = { x: e.clientX, y: e.clientY }
@@ -318,7 +351,7 @@ export class MapCanvas {
   private onPointerUp = (e: PointerEvent) => {
     const down = this.pointerDownAt
     this.pointerDownAt = null
-    if (!down || !this.onRobotClick) return
+    if (!down) return
     if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) return
     if (e.button !== 0) return
     const rect = this.renderer.domElement.getBoundingClientRect()
@@ -329,8 +362,23 @@ export class MapCanvas {
     if (hits.length > 0) {
       let obj: THREE.Object3D | null = hits[0].object
       while (obj && !obj.userData?.robotCode) obj = obj.parent
-      if (obj?.userData?.robotCode) this.onRobotClick(obj.userData.robotCode as string)
+      if (obj?.userData?.robotCode) {
+        this.onRobotClick?.(obj.userData.robotCode as string)
+        this.setSelectedPoint(null)
+        return
+      }
     }
+    // 未命中机器人：尝试点位选中（命中选中并套橙色线圈，落空取消选中）
+    const pointHits = this.raycaster.intersectObjects([...this.pointGroups.values()], true)
+    if (pointHits.length > 0) {
+      let obj: THREE.Object3D | null = pointHits[0].object
+      while (obj && !obj.userData?.pick) obj = obj.parent
+      if (obj?.userData?.pick?.type === 'point') {
+        this.setSelectedPoint((obj.userData.pick.data as PickedPoint).id)
+        return
+      }
+    }
+    this.setSelectedPoint(null)
   }
 
   // ==================== 视角 ====================
@@ -625,6 +673,8 @@ export class MapCanvas {
       this.pointsGroup.add(g)
       this.pointGroups.set(wp.id, g)
     }
+    // 地图重建后恢复选中高亮（旧线圈随 clearGroup 已销毁）
+    this.refreshSelectionRing()
   }
 
   private rebuildPaths(waypoints: Waypoint[], paths: PathInfo[]) {
@@ -705,7 +755,7 @@ export class MapCanvas {
           const tan = tangentAt(Math.min(Math.max(t, 0.02), 0.98)).normalize()
           const angle = Math.atan2(tan.y, tan.x) + (forward ? 0 : Math.PI)
           const arrowShape = new THREE.Shape()
-          const s = 0.25 * scale
+          const s = 0.21 * scale
           arrowShape.moveTo(s * 0.3, 0)
           arrowShape.lineTo(-s * 0.2, s * 0.3)
           arrowShape.lineTo(-s * 0.2, -s * 0.3)
