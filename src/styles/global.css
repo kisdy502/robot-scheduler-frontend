@@ -81,17 +81,3 @@ html.dark {
     .nd-label-inner--robot.is-offline { opacity: 0.55; }
 
 /* 地图画布光标：默认箭头（拖拽/旋转不换手势） */
-
-/* 机器人悬停说明卡（图标含义/占用/电量） */
-.map-hover-tip {
-  position: absolute; z-index: 20; display: none; pointer-events: none;
-  background: var(--rs-panel-bg); border: 1px solid var(--rs-border);
-  border-radius: 6px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
-  padding: 8px 10px; font-size: 12px; line-height: 1.8; color: var(--rs-text-1);
-  max-width: 280px; white-space: nowrap;
-}
-.map-hover-tip b { font-size: 13px; }
-.map-hover-tip .tip-code { font-family: Consolas, monospace; font-size: 10px; color: var(--rs-text-3); margin-left: 5px; }
-.map-hover-tip .tip-row { display: block; }
-.map-hover-tip .tip-row.warn { color: #e6a23c; }
-.map-hover-tip .tip-row.dim { color: var(--rs-text-4); font-size: 11px; }
