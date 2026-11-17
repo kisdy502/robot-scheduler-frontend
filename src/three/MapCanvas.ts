@@ -74,8 +74,8 @@ const POINT_R = 0.19
 const POINT_H = 0.02
 const LANE_W = 0.05
 const LANE_H = 0.02
-const ROBOT_L = 0.36
-const ROBOT_W = 0.27
+const ROBOT_L = 0.33
+const ROBOT_W = 0.25
 /** 画布主题配色（浅色值与 2D 视图/testDispatch 对齐；暗色整体加深一档增强对比） */
 let darkTheme = false
 let glyphColorHex = 0x52667a
@@ -332,7 +332,7 @@ export class MapCanvas {
     const group = this.pointGroups.get(this.selectedPointId)
     if (!group) return
     const ring = new THREE.Mesh(
-      new THREE.RingGeometry(POINT_R * 1.12, POINT_R * 1.24, 36),
+      new THREE.RingGeometry(POINT_R * 1.08, POINT_R * 1.16, 36),
       new THREE.MeshBasicMaterial({
         color: 0xff9c3f, transparent: true, opacity: 0.95,
         side: THREE.DoubleSide, depthWrite: false,
