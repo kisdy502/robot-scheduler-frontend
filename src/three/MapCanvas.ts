@@ -74,8 +74,8 @@ const POINT_R = 0.19
 const POINT_H = 0.02
 const LANE_W = 0.05
 const LANE_H = 0.02
-const ROBOT_L = 0.33
-const ROBOT_W = 0.25
+const ROBOT_L = 0.28
+const ROBOT_W = 0.21
 /** 画布主题配色（浅色值与 2D 视图/testDispatch 对齐；暗色整体加深一档增强对比） */
 let darkTheme = false
 let glyphColorHex = 0x52667a
