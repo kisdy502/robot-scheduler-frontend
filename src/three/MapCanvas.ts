@@ -537,16 +537,17 @@ export class MapCanvas {
       // 已走段：灰色实心圆管（深一档保证可见：浅灰细线在浅底图上等同隐形）
       const cut = Math.min(route.progress, pts.length - 1)
       const traveled = pts.slice(0, cut + 1)
-      const traveledR = focused ? 0.014 : 0.011
+      const traveledR = (focused ? 0.02 : 0.014) * scale
       if (traveled.length >= 2) {
         this.routesGroup.add(this.buildTube(traveled, z + traveledR, traveledR,
           new THREE.MeshBasicMaterial({ color: 0x7d8794, transparent: true, opacity: focused ? 0.6 : 0.45 })))
       }
 
       // 剩余段：彩色虚线圆管（聚焦提亮加粗）；dash 用固定世界米制——
-      // 不能乘 sceneScale（大地图 scale≈3 时一段虚线 3.9m 比路段还长，视觉上退化为实线）
+      // 不能乘 sceneScale（大地图 scale≈3 时一段虚线 3.9m 比路段还长，视觉上退化为实线）；
+      // 半径随 scale 缩放（≈旧 Line2 的 5~7px 视觉粗细，立体化初版固定米制过细看不清）
       const remaining = pts.slice(cut)
-      const routeR = focused ? 0.022 : 0.017
+      const routeR = (focused ? 0.042 : 0.03) * scale
       if (remaining.length >= 2) {
         const dashMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: focused ? 0.95 : 0.7 })
         for (const poly of this.sliceDashes(remaining, 0.6, 0.4)) {
