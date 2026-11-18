@@ -85,10 +85,11 @@ const LANE_LIGHT = { color: 0x606266, opacity: 0.4 }, LANE_DARK = { color: 0x4a5
 const CURVE_LIGHT = { color: 0x7a8fb5, opacity: 0.5 }, CURVE_DARK = { color: 0x5d729c, opacity: 0.5 }
 const ARROW_LIGHT = { color: 0x7ab7ff, opacity: 0.7 }, ARROW_DARK = { color: 0xdfe9f5, opacity: 0.85 }
 
-/** 机器人专属色板（图标/路线/终点环同色；按首次出现顺序分配，16 台内保证不撞色） */
-const ROBOT_PALETTE = [0x409eff, 0x67c23a, 0xe6a23c, 0xf56c6c, 0x9b59b6,
-  0x00b8d4, 0xff7043, 0x7cb342, 0xec407a, 0x5c6bc0,
-  0x26a69a, 0xffca28, 0x8d6e63, 0xd4e157, 0xba68c8, 0x4fc3f7]
+/** 机器人专属色板（图标/路线/终点环同色；按首次出现顺序分配，13 台内保证不撞色。
+ *  不含绿色系——点位圆盘是绿色（浅色 #95d475/暗色 #67c23a），撞色无法区分机器人和点位） */
+const ROBOT_PALETTE = [0x409eff, 0xe6a23c, 0xf56c6c, 0x9b59b6,
+  0x00b8d4, 0xff7043, 0xec407a, 0x5c6bc0,
+  0x26a69a, 0xffca28, 0x8d6e63, 0xba68c8, 0x4fc3f7]
 
 export interface MapGeoInfo {
   loaded: boolean
