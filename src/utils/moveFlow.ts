@@ -123,6 +123,7 @@ export async function runMoveFlow(o: MoveFlowOptions): Promise<MoveFlowResult> {
   } finally {
     if (assigned) {
       try {
+        emit('release', 'start', '释放机器人')
         await schedulerApi.releaseRobot(tf, o.robotCode)
         emit('release', 'ok', '机器人已释放')
       } catch (e: any) {

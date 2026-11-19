@@ -156,6 +156,10 @@ const steps = reactive([
 const activeStep = computed(() => {
   const idx = steps.findIndex(s => s.status === 'error')
   if (idx >= 0) return idx
+  // 处理中步骤优先指向（前置步骤可能被跳过：仅动作模式 assign/move 无 success，
+  // 只数 success 会让步骤条停在错误档位——与下方日志进度脱节）
+  const processing = steps.findIndex(s => s.status === 'process')
+  if (processing >= 0) return processing
   return steps.filter(s => s.status === 'success').length
 })
 
@@ -285,6 +289,9 @@ async function runActionOnly() {
   const tf = snowflakeId()
   const bodyTaskId = bizTaskId(tf)
   try {
+    // 前置步骤标记为跳过（绿色）+ 步骤条直接指向动作档——与日志进度对齐
+    setStep('assign', 'success', '仅动作模式跳过')
+    setStep('move', 'success', '需机器人已在点位')
     setStep('action', 'process')
     log(cfg.actionName, `直接下发 start-activity → ${robotCode.value} @ ${pointId.value || '(在位点)'}`)
     await sendAndWaitAction(tf, bodyTaskId, `${cfg.kind}sim.${bodyTaskId}`)
