@@ -11,7 +11,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { pointStyle } from '@/utils/pointStyle'
 import { robotDisplayName } from '@/utils/robotNames'
 
-import type { Waypoint, PathInfo, Zone, RobotInfo, ActiveRoute } from '@/types'
+import type { Waypoint, PathInfo, PathSegment, Zone, RobotInfo, ActiveRoute } from '@/types'
 
 // ==================== 机器人徽标（紧凑单行：图标 + 名字 + 5 格电池） ====================
 
@@ -155,6 +155,8 @@ export class MapCanvas {
   private animationId = 0
   private disposed = false
   private routesKey = ''
+  /** 路段几何索引（from|to 双向键）：路线绘制按真实路段形状展开，与车道一致 */
+  private segmentIndex = new Map<string, PathSegment>()
 
   /** 同一帧内的多次状态变更合并绘制；静止及后台页面不持续占用 GPU。 */
   private invalidate = () => {
@@ -437,6 +439,15 @@ export class MapCanvas {
     this.rebuildPoints(data.waypoints)
     this.rebuildPaths(data.waypoints, data.paths)
     this.rebuildZones(data.zones)
+    // 路线几何索引（双向可查）：轨迹绘制按路段真实形状展开（直线/贝塞尔），与车道一致
+    this.segmentIndex.clear()
+    for (const p of data.paths ?? []) {
+      for (const s of p.segments ?? []) {
+        if (!s?.from || !s?.to) continue
+        this.segmentIndex.set(`${s.from}|${s.to}`, s)
+        this.segmentIndex.set(`${s.to}|${s.from}`, s)
+      }
+    }
     // 比例变化时，下次路线更新需重新生成目标环。
     this.routesKey = ''
     this.invalidate()
@@ -535,12 +546,11 @@ export class MapCanvas {
       // 车道条带顶面 0.02 之上（避免被立体条带遮挡/穿插）
       const z = focused ? 0.05 : 0.04
 
-      // 曲线化：折线先过点平滑为密集曲线（机器人连续转弯，折点直角的轨迹与曲线路线不一致），
-      // progress（原折线段索引）按比例映射到均匀采样点
-      const dense = this.smoothRoute(pts)
-      const lastIdx = dense.length - 1
+      // 按路段真实几何展开：曲线段沿贝塞尔、直段直线（与地图车道同形状）；
+      // bounds 记录原路点在密集列中的位置，progress 按原段边界切分
+      const { dense, bounds } = this.expandRouteGeometry(pts)
       const cut = Math.min(route.progress, pts.length - 1)
-      const cutIdx = Math.min(Math.round((cut / Math.max(pts.length - 1, 1)) * lastIdx), lastIdx)
+      const cutIdx = bounds[Math.min(cut, bounds.length - 1)] ?? 0
 
       // 已走段：灰色实心圆管（深一档保证可见：浅灰细线在浅底图上等同隐形）
       const traveled = dense.slice(0, cutIdx + 1)
@@ -575,17 +585,42 @@ export class MapCanvas {
     this.invalidate()
   }
 
-  /** 路线折线 → 平滑曲线（centripetal Catmull-Rom 过点插值）：机器人连续转弯行驶，
-   * 折点直角的轨迹与曲线路线不一致；插值严格经过原折点、端点不跑偏，
-   * centripetal 参数化抑制锐角处的过冲。返回均匀弧长采样点。 */
-  private smoothRoute(pts: ActiveRoute['waypoints']): Array<{ x: number; y: number }> {
-    if (pts.length < 3) {
-      return pts.filter(p => p.x != null && p.y != null).map(p => ({ x: p.x!, y: p.y! }))
+  /** 路线按路段真实几何展开为密集折线：CURVE 段沿地图贝塞尔控制点展开（方向感知：
+   * 反向行经时控制点顺序交换，与车道渲染同规则），直段保持直线。
+   * bounds[i] = 原路点 i 在密集列中的索引，供 progress 按原段边界切分。
+   * 未匹配到路段（如起点是机器人实时位置）退化为直线，端点仍然精确。 */
+  private expandRouteGeometry(pts: ActiveRoute['waypoints']): {
+    dense: Array<{ x: number; y: number }>
+    bounds: number[]
+  } {
+    const dense: Array<{ x: number; y: number }> = [{ x: pts[0].x!, y: pts[0].y! }]
+    const bounds: number[] = [0]
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i]
+      const b = pts[i + 1]
+      const seg = this.segmentIndex.get(`${a.id}|${b.id}`)
+      const cp = seg?.control_points
+      if (seg && seg.segment_type?.toUpperCase() === 'CURVE' && cp && cp.length >= 2
+          && cp[0]?.length >= 2 && cp[1]?.length >= 2) {
+        const fwd = seg.from === a.id
+        const c1 = fwd ? cp[0] : cp[1]
+        const c2 = fwd ? cp[1] : cp[0]
+        const curve = new THREE.CubicBezierCurve(
+          new THREE.Vector2(a.x!, a.y!),
+          new THREE.Vector2(c1[0], c1[1]),
+          new THREE.Vector2(c2[0], c2[1]),
+          new THREE.Vector2(b.x!, b.y!))
+        const samples = Math.min(Math.max(Math.ceil(curve.getLength() / 0.3), 8), 64)
+        for (let s = 1; s <= samples; s++) {
+          const p = curve.getPoint(s / samples)
+          dense.push({ x: p.x, y: p.y })
+        }
+      } else {
+        dense.push({ x: b.x!, y: b.y! })
+      }
+      bounds.push(dense.length - 1)
     }
-    const curve = new THREE.CatmullRomCurve3(
-      pts.map(p => new THREE.Vector3(p.x!, p.y!, 0)), false, 'centripetal', 0.5)
-    const samples = Math.min((pts.length - 1) * 12, 600)
-    return curve.getSpacedPoints(samples).map(v => ({ x: v.x, y: v.y }))
+    return { dense, bounds }
   }
 
   /** 沿折线的立体圆管（CurvePath 保留折角；z 为管底，管心抬半径件防穿车道） */
