@@ -535,9 +535,15 @@ export class MapCanvas {
       // 车道条带顶面 0.02 之上（避免被立体条带遮挡/穿插）
       const z = focused ? 0.05 : 0.04
 
-      // 已走段：灰色实心圆管（深一档保证可见：浅灰细线在浅底图上等同隐形）
+      // 曲线化：折线先过点平滑为密集曲线（机器人连续转弯，折点直角的轨迹与曲线路线不一致），
+      // progress（原折线段索引）按比例映射到均匀采样点
+      const dense = this.smoothRoute(pts)
+      const lastIdx = dense.length - 1
       const cut = Math.min(route.progress, pts.length - 1)
-      const traveled = pts.slice(0, cut + 1)
+      const cutIdx = Math.min(Math.round((cut / Math.max(pts.length - 1, 1)) * lastIdx), lastIdx)
+
+      // 已走段：灰色实心圆管（深一档保证可见：浅灰细线在浅底图上等同隐形）
+      const traveled = dense.slice(0, cutIdx + 1)
       const traveledR = (focused ? 0.02 : 0.014) * scale
       if (traveled.length >= 2) {
         this.routesGroup.add(this.buildTube(traveled, z + traveledR, traveledR,
@@ -547,7 +553,7 @@ export class MapCanvas {
       // 剩余段：彩色虚线圆管（聚焦提亮加粗）；dash 用固定世界米制——
       // 不能乘 sceneScale（大地图 scale≈3 时一段虚线 3.9m 比路段还长，视觉上退化为实线）；
       // 半径随 scale 缩放（≈旧 Line2 的 5~7px 视觉粗细，立体化初版固定米制过细看不清）
-      const remaining = pts.slice(cut)
+      const remaining = dense.slice(cutIdx)
       const routeR = (focused ? 0.042 : 0.03) * scale
       if (remaining.length >= 2) {
         const dashMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: focused ? 0.95 : 0.7 })
@@ -569,6 +575,19 @@ export class MapCanvas {
     this.invalidate()
   }
 
+  /** 路线折线 → 平滑曲线（centripetal Catmull-Rom 过点插值）：机器人连续转弯行驶，
+   * 折点直角的轨迹与曲线路线不一致；插值严格经过原折点、端点不跑偏，
+   * centripetal 参数化抑制锐角处的过冲。返回均匀弧长采样点。 */
+  private smoothRoute(pts: ActiveRoute['waypoints']): Array<{ x: number; y: number }> {
+    if (pts.length < 3) {
+      return pts.filter(p => p.x != null && p.y != null).map(p => ({ x: p.x!, y: p.y! }))
+    }
+    const curve = new THREE.CatmullRomCurve3(
+      pts.map(p => new THREE.Vector3(p.x!, p.y!, 0)), false, 'centripetal', 0.5)
+    const samples = Math.min((pts.length - 1) * 12, 600)
+    return curve.getSpacedPoints(samples).map(v => ({ x: v.x, y: v.y }))
+  }
+
   /** 沿折线的立体圆管（CurvePath 保留折角；z 为管底，管心抬半径件防穿车道） */
   private buildTube(poly: Array<{ x: number; y: number }>, zBottom: number, radius: number,
                     material: THREE.Material): THREE.Mesh {
@@ -578,12 +597,13 @@ export class MapCanvas {
         new THREE.Vector3(poly[i].x, poly[i].y, zBottom + radius),
         new THREE.Vector3(poly[i + 1].x, poly[i + 1].y, zBottom + radius)))
     }
+    // 密集采样点间距已很小（~0.1m），细分 4×/点足够平滑；长轨迹封顶防几何膨胀
     return new THREE.Mesh(
-      new THREE.TubeGeometry(path, Math.max(poly.length * 8, 8), radius, 8, false), material)
+      new THREE.TubeGeometry(path, Math.min(Math.max(poly.length * 4, 8), 640), radius, 8, false), material)
   }
 
   /** 按世界米制把折线切成 dash/gap 交替的子折线（立体虚线管段用；保留折点处直角） */
-  private sliceDashes(pts: ActiveRoute['waypoints'], dash: number, gap: number): Array<Array<{ x: number; y: number }>> {
+  private sliceDashes(pts: Array<{ x: number | null; y: number | null }>, dash: number, gap: number): Array<Array<{ x: number; y: number }>> {
     const cum: number[] = [0]
     for (let i = 1; i < pts.length; i++) {
       cum.push(cum[i - 1] + Math.hypot(pts[i].x! - pts[i - 1].x!, pts[i].y! - pts[i - 1].y!))
