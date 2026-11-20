@@ -156,8 +156,10 @@ const dispatchDlg = reactive({
   candidates: [] as RobotInfo[],
 })
 
+// 派发资格以后端 dispatchable 为准（离线/停止确认/地图不一致/使用权冲突均已在其中）；
+// 不按 mode 过滤——充电中可打断离桩执行任务（后端观测离桩自动释放充电位）
 const canDispatch = (r: RobotInfo) =>
-  r.online_status === 'online' && r.mode === 'idle' && r.dispatchable
+  r.online_status === 'online' && r.dispatchable
   && !inFlightRobots.value.includes(r.robot_code)
 
 const zhMode = (m: string) => {
