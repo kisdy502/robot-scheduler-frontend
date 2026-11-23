@@ -89,7 +89,7 @@
       </el-table-column>
       <el-table-column label="说明" min-width="200">
         <template #default="{ row }">
-          <span :style="{ color: row.status === 'failed' ? '#f56c6c' : 'var(--rs-text-2)', fontSize: '12px' }">{{ row.message ?? '' }}</span>
+          <span :style="{ color: msgTone(row), fontSize: '12px' }">{{ row.message ?? '' }}</span>
         </template>
       </el-table-column>
       <el-table-column label="规划路线" min-width="220" show-overflow-tooltip>
@@ -184,6 +184,13 @@ const zhCategory = (s: string) => categoryMap[s] ?? s
 const tagType = (s: string) => tagTypeMap[s] ?? 'info'
 const isFinal = (s: string) => s === 'completed' || s === 'failed' || s === 'canceled'
 const fmtTime = (ts: number | null) => ts ? new Date(ts).toLocaleString('zh-CN', { hour12: false }) : ''
+
+/** 说明列三档配色：红=失败；黄=任务活着但当前受阻（交通等待/段前复检/等机器人等）；白=正常 */
+const msgTone = (row: TaskRecord): string => {
+  if (row.status === 'failed') return '#f56c6c'
+  if (!isFinal(row.status) && row.message && /等待|占用|复检|受阻/.test(row.message)) return '#e6a23c'
+  return 'var(--rs-text-2)'
+}
 
 /** 行关联：外部动作镜像（body_task_id = 移动任务 task_id） */
 function activityOf(row: TaskRecord): any | null {
