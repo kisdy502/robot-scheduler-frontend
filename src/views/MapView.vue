@@ -13,6 +13,10 @@
       <el-divider direction="vertical" />
       <span class="route-toggle-label">全部路线</span>
       <el-switch v-model="showAllRoutes" size="small" @change="refreshRoutes" />
+      <el-divider direction="vertical" />
+      <el-button size="small" @click="uploadDlg.visible = true">
+        <el-icon style="margin-right:4px"><UploadFilled /></el-icon>切图
+      </el-button>
       <el-tag v-if="selectedRobot" closable size="small" style="margin-left:8px" @close="clearSelection">
         聚焦 {{ robotShortName(selectedRobot) }}
       </el-tag>
@@ -92,6 +96,40 @@
         <el-button @click="dispatchDlg.visible = false">取消</el-button>
         <el-button type="primary" :disabled="!dispatchDlg.selected" @click="confirmDispatch">
           下发移动（后台执行）
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 切图对话框：上传地图编辑器导出的 zip 整包，后端解包识别并激活 -->
+    <el-dialog v-model="uploadDlg.visible" title="上传地图包（切换激活地图）" width="480px" align-center
+               :close-on-click-modal="false">
+      <div class="dlg-tip">
+        当前地图：<b>{{ mapName || '未加载' }}</b>{{ mapVersion ? ' · ' + mapVersion : '' }}
+      </div>
+      <div class="dlg-tip">
+        上传地图编辑器导出的 zip 整包，校验通过后立即切换激活地图并重建规划图。
+      </div>
+      <div class="dlg-tip dlg-warn">
+        切图前要求：无排队/执行中任务、机器人无驻留占用，否则被拒绝（409）；
+        机器人侧请先部署新地图（包内 native 机器人包），否则地图不一致的任务会立即失败。
+      </div>
+      <el-upload drag accept=".zip" :auto-upload="false" :show-file-list="false" :on-change="onZipPicked">
+        <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+        <div class="el-upload__text">拖拽地图包 zip 到此处，或<em>点击选择</em></div>
+        <template #tip>
+          <div class="el-upload__tip">自动识别包内 map_info.json + 地图图片 + SLAM yaml，其余文件忽略</div>
+        </template>
+      </el-upload>
+      <div v-if="uploadDlg.file" class="picked-file">
+        <el-icon><DocumentChecked /></el-icon>
+        <span class="picked-name">{{ uploadDlg.file.name }}</span>
+        <span class="picked-size">{{ (uploadDlg.file.size / 1024 / 1024).toFixed(1) }} MB</span>
+        <el-button link type="danger" size="small" @click="uploadDlg.file = null">移除</el-button>
+      </div>
+      <template #footer>
+        <el-button @click="uploadDlg.visible = false">取消</el-button>
+        <el-button type="primary" :loading="uploadDlg.uploading" :disabled="!uploadDlg.file" @click="confirmUpload">
+          上传并切换
         </el-button>
       </template>
     </el-dialog>
@@ -214,6 +252,38 @@ const zhType = (t: string) => {
   return m[t] ?? t
 }
 
+/** 切图对话框状态 */
+const uploadDlg = reactive({
+  visible: false,
+  uploading: false,
+  file: null as File | null,
+})
+
+function onZipPicked(uploadFile: { raw?: File }) {
+  uploadDlg.file = uploadFile.raw ?? null
+}
+
+/** 确认上传：成功后立即重载地图元数据与背景图（后端已清空旧路线与等待意图） */
+async function confirmUpload() {
+  const file = uploadDlg.file
+  if (!file || uploadDlg.uploading) return
+  uploadDlg.uploading = true
+  try {
+    const data = await schedulerApi.uploadMapPackage(file)
+    uploadDlg.visible = false
+    uploadDlg.file = null
+    ElMessage.success(`地图已切换: ${data?.map_name ?? ''} ${data?.version ?? ''}`)
+    routes.value = []
+    await loadMap()
+    await loadMapImage()
+  } catch (e: any) {
+    const msg = e?.response?.data?.msg ?? e?.message ?? '未知错误'
+    ElMessage.error(`切图失败: ${msg}`)
+  } finally {
+    uploadDlg.uploading = false
+  }
+}
+
 async function loadMap() {
   try {
     let waypoints: Waypoint[] = []
@@ -270,7 +340,8 @@ async function loadMapImage() {
   try {
     const geo = await schedulerApi.mapGeo()
     if (geo?.loaded && geo.resolution && geo.width && geo.height) {
-      await canvas?.loadMapImage('/api/v1/maps/current/image', geo)
+      // 切图后同名 URL 命中浏览器 30s 缓存会拿到旧底图，时间戳强制取新图
+      await canvas?.loadMapImage(`/api/v1/maps/current/image?t=${Date.now()}`, geo)
     }
   } catch { /* 图片不可用 */ }
 }
@@ -390,4 +461,14 @@ onUnmounted(() => {
 .dlg-radio :deep(.el-radio__label) { display: flex; flex-direction: column; gap: 2px; white-space: normal; }
 .robot-name { font-size: 13px; font-weight: 500; color: var(--rs-text-1); }
 .robot-meta { font-size: 11px; color: var(--rs-text-3); }
+
+/* 切图对话框 */
+.dlg-warn { color: var(--el-color-warning); }
+.picked-file {
+  display: flex; align-items: center; gap: 8px; margin-top: 10px;
+  font-size: 12px; color: var(--rs-text-1);
+  background: var(--rs-bg-soft); border-radius: 4px; padding: 6px 10px;
+}
+.picked-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picked-size { color: var(--rs-text-3); flex-shrink: 0; }
 </style>

@@ -37,6 +37,19 @@ export const schedulerApi = {
     return get(`/api/v1/maps/current/waypoints${q ? '?' + q : ''}`)
   },
 
+  /** 上传地图包并激活切图（地图编辑器导出的 zip 整包直传，后端解包识别三件套）。
+   *  失败抛错：HTTP 409 = 有任务绑定或交通占用，400 = 包格式/元数据非法，
+   *  后端 Result 信封的 msg 在 error.response.data.msg */
+  async uploadMapPackage(file: File): Promise<any> {
+    const form = new FormData()
+    form.append('package', file, file.name)
+    const res = await http.post('/api/v1/maps/upload-package', form, { timeout: 120000 })
+    if (res.data?.status !== 0) {
+      throw new Error(res.data?.msg ?? '地图包上传失败')
+    }
+    return res.data?.data ?? res.data
+  },
+
   /** 机器人实时 */
   robots(): Promise<RobotInfo[]> {
     return get('/api/v1/runtime/fleets/snapshot').then((d: any) => d.robots ?? [])
